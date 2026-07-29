@@ -1,75 +1,127 @@
-
-
 import streamlit as st
 import requests
+import pandas as pd
 
-# 1. Page Configuration
-st.set_page_config(page_title="Video Game Anime Finder", layout="wide")
-st.title("🎮 Seasonal Anime with Video Game Tags")
+st.set_page_config(page_title="Current Season Video Game Anime", layout="wide")
 
-# 2. Sidebar Inputs for Season & Year
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    year = st.number_input("Year", min_value=2000, max_value=2030, value=2024)
-with col2:
-    season = st.selectbox("Season", ["WINTER", "SPRING", "SUMMER", "FALL"], index=2)
+st.title("🎮 Current Season Video Game Anime")
+st.write("Live ranking of current season anime tagged with **Video Games** using the AniList API.")
 
-# 3. AniList GraphQL Configuration
-ANILIST_API_URL = "https://graphql.anilist.co"
+# Sidebar Filters
+with st.sidebar:
+    st.header("Filter Options")
+    season = st.selectbox("Season", ["SUMMER", "FALL", "WINTER", "SPRING"], index=0)
+    year = st.number_input("Year", min_value=2000, max_value=2030, value=2026)
+    
+    sort_option = st.selectbox(
+        "Rank By",
+        options=["SCORE_DESC", "POPULARITY_DESC", "TRENDING_DESC"],
+        format_func=lambda x: {
+            "SCORE_DESC": "Highest Average Score",
+            "POPULARITY_DESC": "Most Popular",
+            "TRENDING_DESC": "Trending Now"
+        }[x]
+    )
 
-# Query filters by type (ANIME), season, year, and enforces the "Video Games" tag
-GRAPHQL_QUERY = """
-query ($season: MediaSeason, $seasonYear: Int) {
-  Page(page: 1, perPage: 20) {
-    media(season: $season, seasonYear: $seasonYear, type: ANIME, tag_in: ["Video Games"]) {
+# GraphQL Query with dynamic $tags variable
+ANILIST_URL = "https://graphql.anilist.co"
+
+query = """
+query ($season: MediaSeason, $seasonYear: Int, $sort: [MediaSort], $tags: [String]) {
+  Page(page: 1, perPage: 50) {
+    media(season: $season, seasonYear: $seasonYear, tag_in: $tags, type: ANIME, sort: $sort) {
       id
       title {
         english
         romaji
       }
+      averageScore
+      popularity
+      episodes
       coverImage {
         large
       }
-      description
-      episodes
-      averageScore
+      siteUrl
+      genres
+      tags {
+        name
+      }
     }
   }
 }
 """
 
-variables = {"season": season, "seasonYear": year}
+variables = {
+    "season": season,
+    "seasonYear": year,
+    "sort": [sort_option],
+    "tags": ["Video Games", "Virtual World", "E-Sports"]
+}
 
-# 4. Fetch Data from API
-if st.sidebar.button("Fetch Anime", type="primary"):
-    with st.spinner("Searching AniList..."):
-        try:
-            response = requests.post(
-                ANILIST_API_URL, 
-                json={"query": GRAPHQL_QUERY, "variables": variables}
-            )
-            
-            if response.status_value == 200:
-                anime_list = response.json()["data"]["Page"]["media"]
-                
-                if not anime_list:
-                    st.info("No anime found with 'Video Games' tags for this season.")
-                
-                # 5. Display Results in a Grid layout
-                for anime in anime_list:
-                    with st.container(border=True):
-                        c1, c2 = st.columns([1, 4])
-                        with c1:
-                            st.image(anime["coverImage"]["large"], use_container_width=True)
-                        with c2:
-                            title = anime["title"]["english"] or anime["title"]["romaji"]
-                            st.subheader(title)
-                            st.write(f"⭐ **Score:** {anime['averageScore'] or 'N/A'}/100 | 📺 **Episodes:** {anime['episodes'] or 'N/A'}")
-                            
-                            # Strip basic HTML tags from descriptions if present
-                            desc = anime["description"] or "No description available."
-                            st.markdown(desc, unsafe_allow_html=True)
-            else:
-                st.error(f"AniList API error: {response.status_value}")
-        except Exception as e:
-            st.error(f"An unexpected error occurred: {e}")
+@st.cache_data(ttl=3600)  # Cache results for 1 hour to prevent 429 Rate Limit errors
+def fetch_anime_data(variables):
+    # Added Browser User-Agent header to bypass Cloudflare/Host blocks
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StreamlitAnimeApp/1.0"
+    }
+    
+    try:
+        response = requests.post(
+            ANILIST_URL, 
+            json={'query': query, 'variables': variables}, 
+            headers=headers,
+            timeout=10
+        )
+        
+        # Check HTTP Status
+        if response.status_code == 200:
+            return response.json().get('data', {}).get('Page', {}).get('media', [])
+        else:
+            st.error(f"API Error ({response.status_code}): {response.text}")
+            return []
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection Error: {e}")
+        return []
+
+anime_list = fetch_anime_data(variables)
+
+if not anime_list:
+    st.info("No video game anime found for this season/year selection.")
+else:
+    st.subheader(f"Ranked List ({len(anime_list)} Found)")
+
+    # Grid Display
+    cols = st.columns(3)
+    for index, item in enumerate(anime_list):
+        col = cols[index % 3]
+        
+        title = item['title']['english'] or item['title']['romaji']
+        score = item['averageScore'] if item['averageScore'] else "N/A"
+        cover = item['coverImage']['large']
+        url = item['siteUrl']
+        
+        with col:
+            st.markdown(f"### #{index + 1} {title}")
+            st.image(cover, use_column_width=True)
+            st.markdown(f"⭐ **Score:** {score}/100 | 🔥 **Popularity:** {item['popularity']}")
+            st.markdown(f"📺 **Episodes:** {item['episodes'] if item['episodes'] else 'TBD'}")
+            st.markdown(f"[View on AniList]({url})")
+            st.divider()
+
+    # Data Table View
+    st.subheader("Data Overview")
+    df_data = []
+    for rank, item in enumerate(anime_list, start=1):
+        df_data.append({
+            "Rank": rank,
+            "Title": item['title']['english'] or item['title']['romaji'],
+            "Score": item['averageScore'],
+            "Popularity": item['popularity'],
+            "Genres": ", ".join(item['genres']),
+            "Link": item['siteUrl']
+        })
+    
+    df = pd.DataFrame(df_data)
+    st.dataframe(df, use_container_width=True)
