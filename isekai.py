@@ -2,16 +2,23 @@ import streamlit as st
 import requests
 import pandas as pd
 
-st.set_page_config(page_title="Current Season Video Game Anime", layout="wide")
+st.set_page_config(page_title="Current Season Isekai Anime", layout="wide")
 
-st.title("🎮 Current Season Video Game Anime")
-st.write("Live ranking of current season anime tagged with **Video Games** using the AniList API.")
+st.title("🌀 Current Season Isekai Anime")
+st.write("Live ranking of current season anime based on **Isekai & Portal Fantasy** tags using the AniList API.")
 
 # Sidebar Filters
 with st.sidebar:
     st.header("Filter Options")
     season = st.selectbox("Season", ["SUMMER", "FALL", "WINTER", "SPRING"], index=0)
     year = st.number_input("Year", min_value=2000, max_value=2030, value=2026)
+    
+    # AniList specific Isekai tags
+    selected_tags = st.multiselect(
+        "Isekai Sub-Tags",
+        options=["Isekai", "Reincarnation", "Transmigration", "Otome Game", "Dungeon", "Overpowered Main Character"],
+        default=["Isekai", "Reincarnation"]
+    )
     
     sort_option = st.selectbox(
         "Rank By",
@@ -23,7 +30,7 @@ with st.sidebar:
         }[x]
     )
 
-# GraphQL Query
+# AniList GraphQL Query
 ANILIST_URL = "https://graphql.anilist.co"
 
 query = """
@@ -55,12 +62,12 @@ variables = {
     "season": season,
     "seasonYear": year,
     "sort": [sort_option],
-    "tags": ["Video Games", "Virtual World", "E-Sports"]
+    "tags": selected_tags if selected_tags else ["Isekai"]
 }
 
-@st.cache_data(ttl=3600)  # Caches results for 1 hour
+@st.cache_data(ttl=3600)  # Cache data for 1 hour to stay within API rate limits
 def fetch_anime_data(variables):
-    # Full browser User-Agent to ensure Cloudflare doesn't block server-side requests
+    # Full browser User-Agent header prevents Cloudflare/host 403 blocks
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -87,7 +94,7 @@ def fetch_anime_data(variables):
 anime_list = fetch_anime_data(variables)
 
 if not anime_list:
-    st.info("No video game anime found for this season/year selection.")
+    st.info("No Isekai anime found for this season/year selection.")
 else:
     st.subheader(f"Ranked List ({len(anime_list)} Found)")
 
@@ -101,9 +108,14 @@ else:
         cover = item['coverImage']['large']
         url = item['siteUrl']
         
+        # Extract matching Isekai tags
+        item_tags = [t['name'] for t in item.get('tags', []) if t['name'] in (selected_tags or ["Isekai"])]
+        tag_string = ", ".join(item_tags) if item_tags else "Isekai"
+        
         with col:
             st.markdown(f"### #{index + 1} {title}")
             st.image(cover, use_container_width=True)
+            st.markdown(f"🌀 **Tags:** `{tag_string}`")
             st.markdown(f"⭐ **Score:** {score}/100 | 🔥 **Popularity:** {item['popularity']}")
             st.markdown(f"📺 **Episodes:** {item['episodes'] if item['episodes'] else 'TBD'}")
             st.markdown(f"[View on AniList]({url})")
