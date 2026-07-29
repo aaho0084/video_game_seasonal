@@ -43,10 +43,10 @@ def fetch_igdb_top_games(client_id, client_secret):
         "User-Agent": "StreamlitGameRanker/1.0"
     }
 
-    # Apicalypse Query: Must have clean syntax without extra leading indents
+    # Apicalypse Query: Clean string formatting without leading space issues
     query_body = (
         "fields name, total_rating, total_rating_count, cover.url, genres.name; "
-        "where total_rating_count > 100 & category = 0; "
+        "where total_rating_count != null; "
         "sort total_rating_count desc; "
         "limit 10;"
     )
