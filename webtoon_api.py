@@ -1,17 +1,19 @@
 import logging
 from typing import List, Dict, Any
+from datetime import datetime
 import requests
 import pandas as pd
 import streamlit as st
 
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("WebtoonApp")
 
 # ==========================================
-# 1. DIRECT API FETCHER (NO HEROKU NEEDED)
+# 1. DIRECT NAVER FETCHING LOGIC
 # ==========================================
 class DirectWebtoonFetcher:
-    """Fetches webtoon metadata directly from official endpoints."""
+    """Fetches real-time webtoon rankings directly from Naver API."""
     
     NAV_URL = "https://comic.naver.com/api/article/list/weekday"
     
@@ -21,15 +23,18 @@ class DirectWebtoonFetcher:
     }
 
     DAY_MAP = {
-        "mon": "MONDAY", "tue": "TUESDAY", "wed": "WEDNESDAY",
-        "thu": "THURSDAY", "fri": "FRIDAY", "sat": "SATURDAY",
-        "sun": "SUNDAY"
+        0: "mon", 1: "tue", 2: "wed", 3: "thu", 4: "fri", 5: "sat", 6: "sun"
     }
 
     @classmethod
-    def fetch_naver(cls, day: str = "mon") -> List[Dict[str, Any]]:
-        mapped_day = cls.DAY_MAP.get(day.lower(), "MONDAY")
-        params = {"week": mapped_day.lower()}
+    def get_current_day_code(cls) -> str:
+        """Returns today's day string based on current server weekday."""
+        weekday_num = datetime.now().weekday()
+        return cls.DAY_MAP.get(weekday_num, "wed")
+
+    @classmethod
+    def fetch_top_webtoons(cls, day: str, limit: int = 10) -> List[Dict[str, Any]]:
+        params = {"week": day.lower()}
         
         try:
             res = requests.get(cls.NAV_URL, params=params, headers=cls.HEADERS, timeout=8)
@@ -39,123 +44,83 @@ class DirectWebtoonFetcher:
             raw_titles = data.get("titleList", [])
             formatted = []
             
-            for item in raw_titles:
+            for item in raw_titles[:limit]:
+                # Extract author names safely
                 authors = [a.get("name") for a in item.get("communityArtists", [])]
                 author_str = ", ".join(authors) if authors else "Unknown"
                 
                 title_id = item.get("titleId")
                 formatted.append({
-                    "title": item.get("titleName", "Untitled"),
-                    "author": author_str,
-                    "thumbnail": item.get("thumbnailUrl"),
-                    "url": f"https://comic.naver.com/webtoon/list?titleId={title_id}",
-                    "provider": "naver",
-                    "isUpdated": item.get("up", False)
+                    "Rank": len(formatted) + 1,
+                    "Title": item.get("titleName", "Untitled"),
+                    "Author": author_str,
+                    "Updated Today": "🔥 Yes" if item.get("up", False) else "No",
+                    "Read Link": f"https://comic.naver.com/webtoon/list?titleId={title_id}"
                 })
             return formatted
             
         except Exception as e:
-            logger.warning(f"Direct Naver fetch failed: {e}")
+            logger.error(f"Failed to fetch Naver Webtoons: {e}")
             return []
-
-
-# Offline Fallback Dataset if cloud outbound traffic is throttled
-MOCK_WEBTOONS = [
-    {
-        "title": "Tower of God",
-        "author": "SIU",
-        "thumbnail": "https://image-comic.pstatic.net/webtoon/183559/thumbnail/thumbnail_IMAG21_3137538258352391264.jpg",
-        "url": "https://comic.naver.com/webtoon/list?titleId=183559",
-        "provider": "naver",
-        "isUpdated": False
-    },
-    {
-        "title": "The Remarried Empress",
-        "author": "Alphatart, Sumpul",
-        "thumbnail": "https://image-comic.pstatic.net/webtoon/735661/thumbnail/thumbnail_IMAG21_3862215456209823616.jpg",
-        "url": "https://comic.naver.com/webtoon/list?titleId=735661",
-        "provider": "naver",
-        "isUpdated": True
-    },
-    {
-        "title": "Omniscient Reader",
-        "author": "singNsong, Sleepy-C",
-        "thumbnail": "https://image-comic.pstatic.net/webtoon/747269/thumbnail/thumbnail_IMAG21_3871146816041183173.jpg",
-        "url": "https://comic.naver.com/webtoon/list?titleId=747269",
-        "provider": "naver",
-        "isUpdated": True
-    }
-]
 
 
 # ==========================================
 # 2. STREAMLIT APP LOGIC
 # ==========================================
-st.set_page_config(page_title="Korea Webtoon Explorer", page_icon="💚", layout="wide")
+st.set_page_config(page_title="Top 10 Today", page_icon="📈", layout="wide")
 
-st.title("💚 Korean Webtoon Explorer")
-st.write("Real-time rankings and schedules deployed on Streamlit Cloud.")
+# Determine current day automatically
+current_day = DirectWebtoonFetcher.get_current_day_code()
+
+st.title(f"📈 Today's Top 10 Naver Webtoons ({current_day.upper()})")
+st.write("Live, image-free rankings directly from Naver Webtoon.")
 
 # Sidebar Controls
+DAY_DISPLAY = {
+    "mon": "Monday (월)", "tue": "Tuesday (화)", "wed": "Wednesday (수)",
+    "thu": "Thursday (목)", "fri": "Friday (금)", "sat": "Saturday (토)", "sun": "Sunday (일)"
+}
+
 with st.sidebar:
-    st.header("Search & Filters")
-    provider = st.selectbox("Platform", options=["naver"])
-    update_day = st.selectbox(
-        "Release Day", 
-        options=["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    st.header("Settings")
+    selected_day = st.selectbox(
+        "Day Schedule",
+        options=["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+        index=["mon", "tue", "wed", "thu", "fri", "sat", "sun"].index(current_day),
+        format_func=lambda x: DAY_DISPLAY[x]
     )
-    search_query = st.text_input("Search Title or Author")
-    item_limit = st.slider("Display Limit", 4, 40, 16)
 
 
-# Cache API calls for 15 minutes to stay within Cloud rate limits
-@st.cache_data(ttl=900, show_spinner="Connecting to webtoon services...")
-def load_data(platform: str, day: str):
-    if platform == "naver":
-        results = DirectWebtoonFetcher.fetch_naver(day=day)
-        if results:
-            return results, "Live API"
-            
-    return MOCK_WEBTOONS, "Fallback Dataset"
+# Fetch data with caching (updates every 15 mins)
+@st.cache_data(ttl=900, show_spinner="Fetching live rankings...")
+def load_data(day: str):
+    return DirectWebtoonFetcher.fetch_top_webtoons(day=day, limit=10)
 
 
-webtoon_list, source_type = load_data(provider, update_day)
+webtoons = load_data(selected_day)
 
-# Filter by Search Query if provided
-if search_query.strip():
-    q = search_query.lower()
-    webtoon_list = [
-        w for w in webtoon_list 
-        if q in w.get("title", "").lower() or q in w.get("author", "").lower()
-    ]
-
-# Status Indicator Banner
-if source_type == "Live API":
-    st.success(f"🟢 Connected directly to Naver Webtoon ({len(webtoon_list)} titles loaded)")
+# Display Results
+if not webtoons:
+    st.error("⚠️ Unable to load rankings at this moment. Please refresh or try again later.")
 else:
-    st.info("🟡 Gateway response restricted. Displaying cached webtoon dataset.")
+    st.success(f"Loaded Top 10 for **{DAY_DISPLAY[selected_day]}**")
 
-# Grid Display
-if webtoon_list:
-    items = webtoon_list[:item_limit]
-    cols = st.columns(4)
-    
-    for idx, item in enumerate(items):
-        with cols[idx % 4]:
-            st.markdown(f"#### #{idx + 1} {item.get('title')}")
-            
-            thumb = item.get("thumbnail")
-            if thumb:
-                try:
-                    st.image(thumb, use_container_width=True)
-                except Exception:
-                    st.caption("🖼️ (Image restricted by host CDN)")
+    # Render Clean List
+    for item in webtoons:
+        st.markdown(
+            f"### #{item['Rank']} {item['Title']}  \n"
+            f"✍️ **Author:** {item['Author']} | **Updated Today:** {item['Updated Today']}  \n"
+            f"[📖 Read on Naver]({item['Read Link']})"
+        )
+        st.divider()
 
-            st.caption(f"✍️ **Author:** {item.get('author')}")
-            if item.get("isUpdated"):
-                st.markdown("🔥 **New Episode Today!**")
-            st.markdown(f"[📖 Read Webtoon]({item.get('url')})")
-            st.divider()
-
-    with st.expander("📊 View Data Table"):
-        st.dataframe(pd.DataFrame(webtoon_list), use_container_width=True)
+    # Compact Data Table View
+    with st.expander("📊 View Clean Summary Table"):
+        df = pd.DataFrame(webtoons)
+        st.dataframe(
+            df[["Rank", "Title", "Author", "Updated Today", "Read Link"]], 
+            use_container_width=True,
+            column_config={
+                "Read Link": st.column_config.LinkColumn("Naver Link")
+            }
+        )
