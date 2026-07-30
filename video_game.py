@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("🎮 Top 10 Popular Recent Games")
-st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 7 days.")
+st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 7 days sorted by popularity.")
 
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)
@@ -35,8 +35,8 @@ def get_igdb_token(client_id, client_secret):
         st.error(f"Failed to authenticate with Twitch: {e}")
         return None
 
-# 2. Helper function to query IGDB for games released in the last 7 days
-@st.cache_data(ttl=14400)
+# 2. Helper function to query IGDB for games released in the last 7 days sorted by popularity
+@st.cache_data(ttl=3600)  # Lowered cache to 1 hour to capture fast popularity shifts
 def fetch_igdb_top_games(client_id, client_secret):
     token = get_igdb_token(client_id, client_secret)
     if not token:
@@ -52,11 +52,11 @@ def fetch_igdb_top_games(client_id, client_secret):
     # Calculate Unix timestamp for 7 days ago
     seven_days_ago = int(time.time()) - (7 * 86400)
 
-    # Filter: Recent titles matching window
+    # Filter: Last 7 days, sorted by total review activity/popularity count
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
         f"where first_release_date > {seven_days_ago}; "
-        f"sort first_release_date desc; "
+        f"sort total_rating_count desc; "
         f"limit 10;"
     )
 
@@ -95,7 +95,6 @@ def fetch_igdb_top_games(client_id, client_secret):
         return pd.DataFrame()
 
 # 3. Main Streamlit Application UI
-# LINKED: Pulling directly from your [tmol] dashboard configuration
 tmol_secrets = st.secrets.get("tmol", {})
 client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
 client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
@@ -121,11 +120,6 @@ if client_id and client_secret:
                 st.write(f"⭐ **Rating:** {row['Rating']} / 100 ({row['Reviews Count']} votes)")
             st.divider()
     else:
-        st.info("The API connected successfully, but returned 0 games for this 7-day window.")
+        st.info("No games with tracking data found in the live database for this 7-day window.")
 else:
-    st.error("⚠️ Secrets not found! Make sure your Streamlit app dashboard contains exactly this format:")
-    st.code("""
-[tmol]
-TWITCH_CLIENT_ID = "your_id"
-TWITCH_CLIENT_SECRET = "your_secret"
-    """, language="toml")
+    st.error("⚠️ Secrets not found! Check your Streamlit dashboard settings.")
