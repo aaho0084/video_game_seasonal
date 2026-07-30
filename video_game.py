@@ -14,9 +14,8 @@ st.title("🎮 Top 10 Popular Recent Games")
 st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 90 days.")
 
 # 1. Helper function to authenticate with Twitch OAuth2 - Cached safely as a string
-@st.cache_data(ttl=3600)  # Twitch tokens expire in ~60 days, caching for 1 hour is safe and efficient
+@st.cache_data(ttl=3600)
 def get_igdb_token(client_id, client_secret):
-    # FIX: Corrected Twitch OAuth2 endpoint URL
     auth_url = "https://twitch.tv"
     payload = {
         "client_id": client_id.strip(),
@@ -42,7 +41,6 @@ def fetch_igdb_top_games(client_id, client_secret):
     if not token:
         return pd.DataFrame()
 
-    # FIX: Corrected IGDB v4 API endpoint URL for games
     url = "https://igdb.com"
     headers = {
         "Client-ID": client_id.strip(),
@@ -50,10 +48,8 @@ def fetch_igdb_top_games(client_id, client_secret):
         "User-Agent": "StreamlitGameRanker/1.0"
     }
 
-    # Window of 90 days (90 days * 24 hours * 3600 seconds)
     ninety_days_ago = int(time.time()) - (90 * 86400)
 
-    # Queries recent releases over the last 90 days, returning up to 50 for local sorting
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date, hypes; "
         f"where first_release_date > {ninety_days_ago}; "
@@ -101,8 +97,6 @@ def fetch_igdb_top_games(client_id, client_secret):
             return pd.DataFrame()
             
         df = pd.DataFrame(games_list)
-        
-        # Sort locally using multiple criteria (Hype, review volume) to capture true popularity balance
         df = df.sort_values(by=["Hype Score", "Reviews Count"], ascending=False).head(10).reset_index(drop=True)
         return df
         
@@ -110,10 +104,10 @@ def fetch_igdb_top_games(client_id, client_secret):
         st.error(f"Failed to fetch games from IGDB: {e}")
         return pd.DataFrame()
 
-# 3. Main Streamlit Application UI
-# FIX: Adjusted parsing syntax to pull directly from the root level of Streamlit secrets
-client_id = st.secrets.get("TWITCH_CLIENT_ID", "")
-client_secret = st.secrets.get("TWITCH_CLIENT_SECRET", "")
+# 3. Main Streamlit Application UI - Reverted to your working nested structure
+tmol_secrets = st.secrets.get("tmol", {})
+client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
+client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
 
 if client_id and client_secret:
     with st.spinner("Loading recent releases..."):
@@ -121,10 +115,9 @@ if client_id and client_secret:
         
     if df is not None and not df.empty:
         for index, row in df.iterrows():
-            col1, col2 = st.columns([1, 4]) # FIX: Balanced column layouts for cleaner UI
+            col1, col2 = st.columns([1, 4])
             
             with col1:
-                # FIX: Used a reliable fallback placeholder image URL
                 if row["Cover"] and "placeholder" not in row["Cover"]:
                     st.image(row["Cover"], use_container_width=True)
                 else:
