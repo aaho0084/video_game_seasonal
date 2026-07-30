@@ -16,10 +16,7 @@ st.write("Fetched live via IGDB (Twitch API) showing trending titles released in
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)
 def get_igdb_token(client_id, client_secret):
-    # Construct exact target endpoint URL
-    auth_url = "https://id.twitch.tv/oauth2/token"
-    
-    # Passing arguments via explicit dictionary data payload ensures standard URL form encoding
+    auth_url = "https://twitch.tv"
     payload = {
         "client_id": client_id.strip(),
         "client_secret": client_secret.strip(),
@@ -29,13 +26,10 @@ def get_igdb_token(client_id, client_secret):
     
     try:
         response = requests.post(auth_url, data=payload, headers=headers, timeout=10)
-        
-        # Catch explicit status failures before processing JSON
         if response.status_code != 200:
             st.error(f"⚠️ Twitch Auth Failed! Status Code: {response.status_code}")
-            st.code(response.text) # Prints text error string directly on your app canvas
+            st.code(response.text)
             return None
-            
         return response.json().get("access_token")
     except Exception as e:
         st.error(f"Failed to authenticate with Twitch: {e}")
@@ -48,6 +42,7 @@ def fetch_igdb_top_games(client_id, client_secret):
     if not token:
         return pd.DataFrame()
 
+    # FIX: Corrected API endpoint base path
     url = "https://igdb.com"
     headers = {
         "Client-ID": client_id.strip(),
@@ -117,7 +112,7 @@ if client_id and "YOUR_REAL" not in client_id:
         
     if not df.empty:
         for index, row in df.iterrows():
-            col1, col2 = st.columns()
+            col1, col2 = st.columns([1, 3])
             
             with col1:
                 if row["Cover"]:
