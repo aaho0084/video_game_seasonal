@@ -1,5 +1,5 @@
 import streamlit as st
-import requests
+import httpx
 from datetime import datetime
 
 # Set up page config
@@ -16,24 +16,28 @@ if st.sidebar.button("♻️ Refresh PopScores"):
     st.rerun()
 
 st.sidebar.markdown("""
-### 🧠 What is PopScore?
-IGDB's system updates rankings every 24 hours by evaluating real-time user behavior:
-* **Daily Page Views**
-* **Backlog Adjustments** (Want to play, playing, completed)
-* **Search Velocity**
+### 🔑 Setup Format Reminder
+Ensure your App Secrets tab exactly mimics this structure without prefixes:
+```toml
+TWITCH_CLIENT_ID = "your_30_char_id"
+TWITCH_CLIENT_SECRET = "your_secret_key"
+```
 """)
 
-# Standard browser headers to satisfy Cloudflare bot defense checks
+# Sophisticated desktop browser signature
 BROWSER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
     "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9"
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
 }
 
-# Function to get Twitch Access Token
+# Function to get Twitch Access Token via HTTP/2
 @st.cache_data(ttl=3600)
 def get_igdb_token(client_id, client_secret):
     url = "https://twitch.tv"
+    
     cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
     csec = str(client_secret).strip().replace('"', '').replace("'", "")
     
@@ -43,20 +47,23 @@ def get_igdb_token(client_id, client_secret):
         "grant_type": "client_credentials"
     }
     
-    try:
-        response = requests.post(url, data=payload, headers=BROWSER_HEADERS, timeout=10)
-        if response.status_code == 200:
-            return response.json().get("access_token")
+    # http2=True forces connection signatures matching real end-user browsers
+    with httpx.Client(http2=True, headers=BROWSER_HEADERS, follow_redirects=True) as client:
+        try:
+            response = client.post(url, data=payload, timeout=12.0)
             
-        st.error(f"❌ Twitch Auth Server Refused Request (HTTP Status {response.status_code})")
-        st.code(response.text)
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Network transport layer error: {e}")
+            if response.status_code == 200:
+                return response.json().get("access_token")
+                
+            st.error(f"❌ Twitch Auth Server Refused Request (HTTP Status {response.status_code})")
+            st.code(response.text)
+        except Exception as e:
+            st.error(f"❌ Transport layer failed parsing auth endpoint via HTTP/2: {e}")
     return None
 
-# Function to fetch top trending games using PopScore popularity metrics
+# Function to fetch top trending games using PopScore popularity metrics via HTTP/2
 def fetch_trending_games(client_id, access_token):
-    url = "https://igdb.com"
+    url = "https://api.igdb.com/v4/games"
     cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
     
     headers = {
@@ -66,19 +73,18 @@ def fetch_trending_games(client_id, access_token):
         "Content-Type": "text/plain"
     }
     
-    # Body targets the updated 'popularity' engine field representing PopScore metrics
-    # category = 0 restricts results to main games (skipping DLCs and expansions)
     body = "fields name, popularity, cover.url, summary, first_release_date, total_rating; sort popularity desc; where name != null & category = 0 & popularity != null; limit 10;"
     
-    try:
-        response = requests.post(url, headers=headers, data=body, timeout=10)
-        if response.status_code == 200:
-            return response.json()
-            
-        st.error(f"❌ IGDB API Query Error (HTTP Status {response.status_code})")
-        st.code(response.text)
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ IGDB connection error: {e}")
+    with httpx.Client(http2=True, headers=headers, follow_redirects=True) as client:
+        try:
+            response = client.post(url, content=body, timeout=12.0)
+            if response.status_code == 200:
+                return response.json()
+                
+            st.error(f"❌ IGDB API Query Error (HTTP Status {response.status_code})")
+            st.code(response.text)
+        except Exception as e:
+            st.error(f"❌ Transport layer failed data extraction via HTTP/2: {e}")
     return []
 
 # Retrieve credentials safely from Streamlit Secrets
@@ -92,7 +98,7 @@ except Exception:
 if not CLIENT_ID or not CLIENT_SECRET or "your_" in str(CLIENT_ID):
     st.warning("⚠️ Configuration Required: Update your Streamlit Secrets with valid Twitch credentials.")
 else:
-    with st.spinner("Processing token transaction..."):
+    with st.spinner("Processing token transaction via HTTP/2 tunnel..."):
         token = get_igdb_token(CLIENT_ID, CLIENT_SECRET)
         
         if token:
