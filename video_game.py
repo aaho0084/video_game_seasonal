@@ -47,11 +47,11 @@ def fetch_igdb_top_games(client_id, client_secret):
     # Calculate Unix timestamp for 7 days ago
     seven_days_ago = int(time.time()) - (7 * 86400)
 
-    # Filter: Games released in the last 7 days, sorted by total rating activity
+    # REMOVED: total_rating_count != null (allows new unrated games to show up)
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
-        f"where first_release_date > {seven_days_ago} & total_rating_count != null; "
-        f"sort total_rating_count desc; "
+        f"where first_release_date > {seven_days_ago}; "
+        f"sort first_release_date desc; "
         f"limit 10;"
     )
 
@@ -78,7 +78,7 @@ def fetch_igdb_top_games(client_id, client_secret):
             games_list.append({
                 "Title": game.get("name", "Unknown"),
                 "Rating": round(game.get("total_rating", 0), 1) if game.get("total_rating") else "N/A",
-                "Reviews Count": game.get("total_rating_count", 0),
+                "Reviews Count": game.get("total_rating_count", 0) if game.get("total_rating_count") else 0,
                 "Genres": genre_str,
                 "Release Date": release_date,
                 "Cover": cover_url
@@ -90,12 +90,12 @@ def fetch_igdb_top_games(client_id, client_secret):
         return pd.DataFrame()
 
 # 3. Main Streamlit Application UI
-# Robust dictionary lookup prevents AppCrash if [tmol] is missing
-tmol_secrets = st.secrets.get("tmol", {})
-client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
-client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
+# DIRECT HARDCODING FOR TESTING (Replace strings below with your real keys)
+client_id = "YOUR_REAL_TWITCH_CLIENT_ID"
+client_secret = "YOUR_REAL_TWITCH_CLIENT_SECRET"
 
-if client_id and client_secret:
+# Check if fields were updated from placeholder text
+if client_id and "YOUR_REAL" not in client_id:
     with st.spinner("Fetching trending games..."):
         df = fetch_igdb_top_games(client_id, client_secret)
         
@@ -116,24 +116,6 @@ if client_id and client_secret:
                 st.write(f"⭐ **Rating:** {row['Rating']} / 100 ({row['Reviews Count']} votes)")
             st.divider()
     else:
-        st.info("No games found with reviews in the last 7 days.")
+        st.info("The API connected successfully, but returned 0 games for this 7-day window.")
 else:
-    st.error("⚠️ Missing API Credentials!")
-    st.markdown("""
-    ### How to fix this error:
-    
-    **Option A: Running Locally (Your PC)**
-    1. Create a folder named `.streamlit` in your project root directory.
-    2. Inside it, create a file named `secrets.toml`.
-    3. Paste the following configuration into it:
-    ```toml
-    [tmol]
-    TWITCH_CLIENT_ID = "your_actual_client_id"
-    TWITCH_CLIENT_SECRET = "your_actual_client_secret"
-    ```
-    
-    **Option B: Running on Streamlit Community Cloud**
-    1. Go to your Streamlit App Dashboard.
-    2. Click on **Settings** -> **Secrets**.
-    3. Paste the exact same `[tmol]` configuration block above into the text box and click **Save**.
-    """)
+    st.error("⚠️ hardcoded strings not replaced. Paste your actual credentials into line 93.")
