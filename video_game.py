@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("🎮 Top 10 Popular Recent Games")
-st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 7 days sorted by popularity.")
+st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 30 days sorted by popularity.")
 
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)
@@ -35,8 +35,8 @@ def get_igdb_token(client_id, client_secret):
         st.error(f"Failed to authenticate with Twitch: {e}")
         return None
 
-# 2. Helper function to query IGDB for games released in the last 7 days sorted by popularity
-@st.cache_data(ttl=3600)  # Lowered cache to 1 hour to capture fast popularity shifts
+# 2. Helper function to query IGDB for games released in the last 30 days sorted by popularity
+@st.cache_data(ttl=14400)  # Cache game data for 4 hours
 def fetch_igdb_top_games(client_id, client_secret):
     token = get_igdb_token(client_id, client_secret)
     if not token:
@@ -49,13 +49,13 @@ def fetch_igdb_top_games(client_id, client_secret):
         "User-Agent": "StreamlitGameRanker/1.0"
     }
 
-    # Calculate Unix timestamp for 7 days ago
-    seven_days_ago = int(time.time()) - (7 * 86400)
+    # Calculate Unix timestamp for 30 days ago (30 days * 24 hours * 3600 seconds)
+    thirty_days_ago = int(time.time()) - (30 * 86400)
 
-    # Filter: Last 7 days, sorted by total review activity/popularity count
+    # Filter: Last 30 days, sorted by total review activity/popularity count
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
-        f"where first_release_date > {seven_days_ago}; "
+        f"where first_release_date > {thirty_days_ago}; "
         f"sort total_rating_count desc; "
         f"limit 10;"
     )
@@ -120,6 +120,6 @@ if client_id and client_secret:
                 st.write(f"⭐ **Rating:** {row['Rating']} / 100 ({row['Reviews Count']} votes)")
             st.divider()
     else:
-        st.info("No games with tracking data found in the live database for this 7-day window.")
+        st.info("No games found in the live database for this 30-day window.")
 else:
     st.error("⚠️ Secrets not found! Check your Streamlit dashboard settings.")
