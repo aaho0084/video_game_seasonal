@@ -3,25 +3,24 @@ import requests
 from datetime import datetime
 
 # Set up page config
-st.set_page_config(page_title="Top 10 Games Today", page_icon="🎮", layout="centered")
+st.set_page_config(page_title="IGDB Daily PopScore Tracker", page_icon="📈", layout="centered")
 
-st.title("🎮 Top 10 Games of Today")
-st.write(f"Based on engagement metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
+st.title("📈 Today's Trending Games (IGDB PopScore)")
+st.write(f"Daily rolling popularity rankings based on live user views, backlog additions, and trending engagement activity | {datetime.now().strftime('%B %d, %Y')}")
 
 # Sidebar controls & documentation
 st.sidebar.header("⚙️ App Utilities")
-if st.sidebar.button("♻️ Clear Cache & Force Re-auth"):
+if st.sidebar.button("♻️ Refresh PopScores"):
     st.cache_data.clear()
-    st.success("Cache wiped! Reloading credentials...")
+    st.success("Cache cleared! Fetching fresh daily metrics...")
     st.rerun()
 
 st.sidebar.markdown("""
-### 🔑 Setup Format Reminder
-Ensure your App Secrets tab exactly mimics this structure without prefixes:
-```toml
-TWITCH_CLIENT_ID = "your_30_char_id"
-TWITCH_CLIENT_SECRET = "your_secret_key"
-```
+### 🧠 What is PopScore?
+IGDB's system updates rankings every 24 hours by evaluating real-time user behavior:
+* **Daily Page Views**
+* **Backlog Adjustments** (Want to play, playing, completed)
+* **Search Velocity**
 """)
 
 # Standard browser headers to satisfy Cloudflare bot defense checks
@@ -35,7 +34,6 @@ BROWSER_HEADERS = {
 @st.cache_data(ttl=3600)
 def get_igdb_token(client_id, client_secret):
     url = "https://twitch.tv"
-    
     cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
     csec = str(client_secret).strip().replace('"', '').replace("'", "")
     
@@ -46,26 +44,21 @@ def get_igdb_token(client_id, client_secret):
     }
     
     try:
-        # Pass browser headers along with form data payload
         response = requests.post(url, data=payload, headers=BROWSER_HEADERS, timeout=10)
-        
         if response.status_code == 200:
             return response.json().get("access_token")
             
         st.error(f"❌ Twitch Auth Server Refused Request (HTTP Status {response.status_code})")
         st.code(response.text)
-        
     except requests.exceptions.RequestException as e:
         st.error(f"❌ Network transport layer error: {e}")
     return None
 
-# Function to fetch top popular games using resilient parameters
-def fetch_top_games(client_id, access_token):
+# Function to fetch top trending games using PopScore popularity metrics
+def fetch_trending_games(client_id, access_token):
     url = "https://igdb.com"
-    
     cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
     
-    # Merge browser signatures with API validation headers
     headers = {
         **BROWSER_HEADERS,
         "Client-ID": cid,
@@ -73,8 +66,9 @@ def fetch_top_games(client_id, access_token):
         "Content-Type": "text/plain"
     }
     
-    # Standard fallback indexing array query
-    body = "fields name, rating_count, cover.url, summary, first_release_date, total_rating; sort rating_count desc; where name != null & category = 0 & rating_count != null; limit 10;"
+    # Body targets the updated 'popularity' engine field representing PopScore metrics
+    # category = 0 restricts results to main games (skipping DLCs and expansions)
+    body = "fields name, popularity, cover.url, summary, first_release_date, total_rating; sort popularity desc; where name != null & category = 0 & popularity != null; limit 10;"
     
     try:
         response = requests.post(url, headers=headers, data=body, timeout=10)
@@ -102,7 +96,7 @@ else:
         token = get_igdb_token(CLIENT_ID, CLIENT_SECRET)
         
         if token:
-            games = fetch_top_games(CLIENT_ID, token)
+            games = fetch_trending_games(CLIENT_ID, token)
             
             if games:
                 for idx, game in enumerate(games, 1):
@@ -122,14 +116,15 @@ else:
                             rel_date = datetime.fromtimestamp(game["first_release_date"]).strftime('%Y-%m-%d')
                             st.caption(f"📅 **Released:** {rel_date}")
                         
+                        if "popularity" in game:
+                            st.caption(f"🔥 **Daily PopScore Index:** {game['popularity']:.1f}")
+                        
                         if "total_rating" in game:
-                            st.caption(f"⭐ **Rating:** {game['total_rating']:.1f}/100")
-                        elif "rating_count" in game:
-                            st.caption(f"📈 **Review Count:** {game['rating_count']}")
+                            st.caption(f"⭐ **Community Score:** {game['total_rating']:.1f}/100")
                             
                         summary = game.get("summary", "No description available.")
                         st.write(summary)
                         
                     st.divider()
             else:
-                st.info("No records matched the current indexing rules filter.")
+                st.info("No records returned. The query format is fine, but the data stream is currently blank.")
