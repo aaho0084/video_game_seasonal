@@ -6,7 +6,7 @@ from datetime import datetime
 st.set_page_config(page_title="Top 10 Games Today", page_icon="🎮", layout="centered")
 
 st.title("🎮 Top 10 Games of Today")
-st.write(f"Based on metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
+st.write(f"Based on modern trend metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
 
 # Sidebar instructions for deployment setup
 st.sidebar.header("⚙️ Deployment Setup")
@@ -25,42 +25,54 @@ st.sidebar.markdown("""
 ### 🔑 IGDB API Credentials
 Get your credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
 ```toml
-TWITCH_CLIENT_ID = "your_actual_client_id_here"
-TWITCH_CLIENT_SECRET = "your_actual_client_secret_here"
+TWITCH_CLIENT_ID = "your_client_id"
+TWITCH_CLIENT_SECRET = "your_client_secret"
 ```
 """)
+
+# Function to sanitize strings from accidental prefix copy-pastes
+def sanitize_secret(secret_value):
+    if not secret_value:
+        return ""
+    val = str(secret_value).strip().replace('"', '').replace("'", "")
+    # Automatically purge copy-paste domain remnants that break the Python parser
+    if val.startswith("twitch."):
+        val = val.replace("twitch.", "", 1)
+    return val
 
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    # Clean keys of any accidental whitespace or pasted quotes
-    cid = str(client_id).strip().replace('"', '').replace("'", "")
-    csec = str(client_secret).strip().replace('"', '').replace("'", "")
+    url = "https://id.twitch.tv/oauth2/token"
     
-    # Direct explicit query parameter formatting bypasses requests encoding variations
-    url = f"https://twitch.tv{cid}&client_secret={csec}&grant_type=client_credentials"
+    # Twitch API requires URL encoded parameters passed in the payload body
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "client_credentials"
+    }
     
     try:
-        response = requests.post(url)
+        # data= forces application/x-www-form-urlencoded to prevent URL host errors
+        response = requests.post(url, data=payload)
         if response.status_code == 200:
             return response.json().get("access_token")
         else:
-            st.error(f"❌ Twitch Auth Denied (Status {response.status_code}): {response.text}")
-            st.info("💡 Double-check your Twitch Developer Portal application. Ensure your Client ID and Client Secret match exactly.")
+            st.error(f"❌ Twitch Authentication Refused (Status {response.status_code}): {response.text}")
     except Exception as e:
-        st.error(f"❌ Authentication Request Failed: {e}")
+        st.error(f"❌ Server Connection Failed during authentication step: {e}")
     return None
 
-# Function to fetch top popular games
+# Function to fetch top popular games using modern IGDB endpoints
 def fetch_top_games(client_id, access_token):
-    url = "https://igdb.com"
+    url = "https://api.igdb.com/v4/games"
     headers = {
-        "Client-ID": client_id.strip().replace('"', '').replace("'", ""),
+        "Client-ID": client_id,
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "text/plain"
     }
     
-    # Cleaned, compact query syntax for IGDB engine stability
+    # Query targets main game releases sorted by active user follower metrics to capture current popularity
     body = "fields name, follows, cover.url, summary, first_release_date, total_rating; sort follows desc; where name != null & category = 0 & follows != null; limit 10;"
     
     try:
@@ -76,14 +88,17 @@ def fetch_top_games(client_id, access_token):
 
 # Retrieve credentials safely from Streamlit Secrets
 try:
-    CLIENT_ID = st.secrets["TWITCH_CLIENT_ID"]
-    CLIENT_SECRET = st.secrets["TWITCH_CLIENT_SECRET"]
+    RAW_CLIENT_ID = st.secrets["TWITCH_CLIENT_ID"]
+    RAW_CLIENT_SECRET = st.secrets["TWITCH_CLIENT_SECRET"]
 except Exception:
-    CLIENT_ID = None
-    CLIENT_SECRET = None
+    RAW_CLIENT_ID = None
+    RAW_CLIENT_SECRET = None
 
-# Validation check to stop execution if placeholders are being utilized
-if not CLIENT_ID or not CLIENT_SECRET or "your_" in str(CLIENT_ID):
+# Sanitize input values prior to parsing
+CLIENT_ID = sanitize_secret(RAW_CLIENT_ID)
+CLIENT_SECRET = sanitize_secret(RAW_CLIENT_SECRET)
+
+if not CLIENT_ID or not CLIENT_SECRET or "your_" in CLIENT_ID:
     st.warning("⚠️ Configuration Required: Please update your Streamlit Secrets with valid credentials from the Twitch Developer Portal. Do not use placeholder values.")
 else:
     with st.spinner("Fetching today's top games..."):
