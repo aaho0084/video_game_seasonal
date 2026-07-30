@@ -6,7 +6,7 @@ from datetime import datetime
 st.set_page_config(page_title="Top 10 Games Today", page_icon="🎮", layout="centered")
 
 st.title("🎮 Top 10 Games of Today")
-st.write(f"Based on modern trend metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
+st.write(f"Based on metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
 
 # Sidebar instructions for deployment setup
 st.sidebar.header("⚙️ Deployment Setup")
@@ -19,46 +19,48 @@ st.sidebar.markdown("""
    requests
    ```
 3. Push both files to a **GitHub repository**.
-4. Log into [Streamlit Community Cloud](https://share.streamlit.io/).
+4. Log into [Streamlit Community Cloud](https://streamlit.io).
 5. Click **New app**, select your repo, and deploy!
 
 ### 🔑 IGDB API Credentials
-Get your credentials from the [Twitch Developer Portal](https://twitch.tv). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
+Get your credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
 ```toml
-TWITCH_CLIENT_ID = "your_client_id"
-TWITCH_CLIENT_SECRET = "your_client_secret"
+TWITCH_CLIENT_ID = "your_actual_client_id_here"
+TWITCH_CLIENT_SECRET = "your_actual_client_secret_here"
 ```
 """)
 
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    url = "https://twitch.tv"
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "grant_type": "client_credentials"
-    }
+    # Clean keys of any accidental whitespace or pasted quotes
+    cid = str(client_id).strip().replace('"', '').replace("'", "")
+    csec = str(client_secret).strip().replace('"', '').replace("'", "")
+    
+    # Direct explicit query parameter formatting bypasses requests encoding variations
+    url = f"https://twitch.tv{cid}&client_secret={csec}&grant_type=client_credentials"
+    
     try:
-        response = requests.post(url, data=payload)
+        response = requests.post(url)
         if response.status_code == 200:
             return response.json().get("access_token")
         else:
-            st.error(f"Auth Server Refused Access (Status {response.status_code}): {response.text}")
+            st.error(f"❌ Twitch Auth Denied (Status {response.status_code}): {response.text}")
+            st.info("💡 Double-check your Twitch Developer Portal application. Ensure your Client ID and Client Secret match exactly.")
     except Exception as e:
-        st.error(f"Authentication Request Failed: {e}")
+        st.error(f"❌ Authentication Request Failed: {e}")
     return None
 
-# Function to fetch top popular games using modern IGDB endpoints
+# Function to fetch top popular games
 def fetch_top_games(client_id, access_token):
-    url = "https://api.igdb.com/v4/games"
+    url = "https://igdb.com"
     headers = {
-        "Client-ID": client_id,
+        "Client-ID": client_id.strip().replace('"', '').replace("'", ""),
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "text/plain"
     }
     
-    # Query targets main game releases sorted by active user follower metrics to capture current popularity
+    # Cleaned, compact query syntax for IGDB engine stability
     body = "fields name, follows, cover.url, summary, first_release_date, total_rating; sort follows desc; where name != null & category = 0 & follows != null; limit 10;"
     
     try:
@@ -66,13 +68,13 @@ def fetch_top_games(client_id, access_token):
         if response.status_code == 200:
             return response.json()
         else:
-            st.error(f"IGDB API Query Error {response.status_code}: {response.text}")
+            st.error(f"❌ IGDB API Query Error {response.status_code}: {response.text}")
             return []
     except Exception as e:
-        st.error(f"API Connection Failed: {e}")
+        st.error(f"❌ API Connection Failed: {e}")
         return []
 
-# Retrieve credentials from Streamlit Secrets
+# Retrieve credentials safely from Streamlit Secrets
 try:
     CLIENT_ID = st.secrets["TWITCH_CLIENT_ID"]
     CLIENT_SECRET = st.secrets["TWITCH_CLIENT_SECRET"]
@@ -80,8 +82,9 @@ except Exception:
     CLIENT_ID = None
     CLIENT_SECRET = None
 
-if not CLIENT_ID or not CLIENT_SECRET:
-    st.warning("⚠️ Missing IGDB API Credentials! Please configure `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` in your Streamlit Secrets.")
+# Validation check to stop execution if placeholders are being utilized
+if not CLIENT_ID or not CLIENT_SECRET or "your_" in str(CLIENT_ID):
+    st.warning("⚠️ Configuration Required: Please update your Streamlit Secrets with valid credentials from the Twitch Developer Portal. Do not use placeholder values.")
 else:
     with st.spinner("Fetching today's top games..."):
         token = get_igdb_token(CLIENT_ID, CLIENT_SECRET)
@@ -112,7 +115,7 @@ else:
                         if "total_rating" in game:
                             st.caption(f"⭐ **Rating:** {game['total_rating']:.1f}/100")
                         elif "follows" in game:
-                            st.caption(f"📈 **Followers:** {game['follows']}")
+                            st.caption(f"📈 **Follower Trend Metric:** {game['follows']}")
                             
                         # Summary description layout
                         summary = game.get("summary", "No description available.")
@@ -120,4 +123,4 @@ else:
                         
                     st.divider()
             else:
-                st.info("The query executed cleanly but returned zero games. Verify your Twitch developer application permissions.")
+                st.info("The dashboard connected successfully, but the IGDB query layer returned zero results.")
