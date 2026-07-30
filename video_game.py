@@ -47,7 +47,7 @@ def fetch_igdb_top_games(client_id, client_secret):
     # Calculate Unix timestamp for 7 days ago
     seven_days_ago = int(time.time()) - (7 * 86400)
 
-    # REMOVED: total_rating_count != null (allows new unrated games to show up)
+    # Optimized body query for games released over the past 7 days
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
         f"where first_release_date > {seven_days_ago}; "
@@ -90,18 +90,23 @@ def fetch_igdb_top_games(client_id, client_secret):
         return pd.DataFrame()
 
 # 3. Main Streamlit Application UI
-# DIRECT HARDCODING FOR TESTING (Replace strings below with your real keys)
-client_id = "YOUR_REAL_TWITCH_CLIENT_ID"
-client_secret = "YOUR_REAL_TWITCH_CLIENT_SECRET"
+tmol_secrets = st.secrets.get("tmol", {})
+client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
+client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
 
-# Check if fields were updated from placeholder text
-if client_id and "YOUR_REAL" not in client_id:
+# If Secrets dashboard is empty, fallback directly to your hardcoded strings below
+if not client_id or not client_secret:
+    client_id = "p3p6uzalq7goirss68gg50v5iy30mv"       # <-- Paste actual client id here
+    client_secret = "4dzxgc818qa0faepyrd4k2ffrhixg1" # <-- Paste actual client secret here
+
+# Run Application Layer
+if client_id and client_secret:
     with st.spinner("Fetching trending games..."):
         df = fetch_igdb_top_games(client_id, client_secret)
         
     if not df.empty:
         for index, row in df.iterrows():
-            col1, col2 = st.columns([1, 3])
+            col1, col2 = st.columns([1, 4])
             
             with col1:
                 if row["Cover"]:
@@ -118,4 +123,4 @@ if client_id and "YOUR_REAL" not in client_id:
     else:
         st.info("The API connected successfully, but returned 0 games for this 7-day window.")
 else:
-    st.error("⚠️ hardcoded strings not replaced. Paste your actual credentials into line 93.")
+    st.error("⚠️ Credentials missing! Paste your actual keys directly into lines 92 and 93.")
