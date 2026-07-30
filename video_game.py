@@ -1,136 +1,94 @@
 import streamlit as st
-import httpx
+import requests
 from datetime import datetime
 
 # Set up page config
-st.set_page_config(page_title="IGDB Daily PopScore Tracker", page_icon="📈", layout="centered")
+st.set_page_config(page_title="RAWG Daily Trending Tracker", page_icon="🎮", layout="centered")
 
-st.title("📈 Today's Trending Games (IGDB PopScore)")
-st.write(f"Daily rolling popularity rankings based on live user views, backlog additions, and trending engagement activity | {datetime.now().strftime('%B %d, %Y')}")
+st.title("🎮 Today's Top 10 Trending Games")
+st.write(f"Live daily popularity rankings driven by user collections and wishlist velocity from **RAWG** | {datetime.now().strftime('%B %d, %Y')}")
 
 # Sidebar controls & documentation
 st.sidebar.header("⚙️ App Utilities")
-if st.sidebar.button("♻️ Refresh PopScores"):
+if st.sidebar.button("♻️ Refresh Metrics"):
     st.cache_data.clear()
-    st.success("Cache cleared! Fetching fresh daily metrics...")
+    st.success("Cache cleared! Syncing trending database...")
     st.rerun()
 
 st.sidebar.markdown("""
-### 🔑 Setup Format Reminder
-Ensure your App Secrets tab exactly mimics this structure without prefixes:
-```toml
-TWITCH_CLIENT_ID = "your_30_char_id"
-TWITCH_CLIENT_SECRET = "your_secret_key"
-```
+### 📊 About RAWG Ranking
+This dashboard uses the official `-trending` API filter, which recalculates daily based on global gamers adding titles to their active collections, backlogs, and wishlists.
 """)
 
-# Sophisticated desktop browser signature
-BROWSER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-}
-
-# Function to get Twitch Access Token via HTTP/2
-@st.cache_data(ttl=3600)
-def get_igdb_token(client_id, client_secret):
-    url = "https://twitch.tv"
+# Function to fetch top trending games directly from RAWG
+@st.cache_data(ttl=3600)  # Cache data for 1 hour to optimize performance
+def fetch_rawg_trending(api_key):
+    url = "https://rawg.io"
     
-    cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
-    csec = str(client_secret).strip().replace('"', '').replace("'", "")
+    # Clean keys of any accidental paste quotes
+    clean_key = str(api_key).strip().replace('"', '').replace("'", "")
     
-    payload = {
-        "client_id": cid,
-        "client_secret": csec,
-        "grant_type": "client_credentials"
+    params = {
+        "key": clean_key,
+        "ordering": "-trending",  # Sorts by live daily trending momentum descending
+        "page_size": 10           # Limits the payload output to the top 10 items
     }
     
-    # http2=True forces connection signatures matching real end-user browsers
-    with httpx.Client(http2=True, headers=BROWSER_HEADERS, follow_redirects=True) as client:
-        try:
-            response = client.post(url, data=payload, timeout=12.0)
-            
-            if response.status_code == 200:
-                return response.json().get("access_token")
-                
-            st.error(f"❌ Twitch Auth Server Refused Request (HTTP Status {response.status_code})")
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            return response.json().get("results", [])
+        else:
+            st.error(f"❌ RAWG API Engine Error (HTTP {response.status_code})")
             st.code(response.text)
-        except Exception as e:
-            st.error(f"❌ Transport layer failed parsing auth endpoint via HTTP/2: {e}")
-    return None
-
-# Function to fetch top trending games using PopScore popularity metrics via HTTP/2
-def fetch_trending_games(client_id, access_token):
-    url = "https://api.igdb.com/v4/games"
-    cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
-    
-    headers = {
-        **BROWSER_HEADERS,
-        "Client-ID": cid,
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "text/plain"
-    }
-    
-    body = "fields name, popularity, cover.url, summary, first_release_date, total_rating; sort popularity desc; where name != null & category = 0 & popularity != null; limit 10;"
-    
-    with httpx.Client(http2=True, headers=headers, follow_redirects=True) as client:
-        try:
-            response = client.post(url, content=body, timeout=12.0)
-            if response.status_code == 200:
-                return response.json()
-                
-            st.error(f"❌ IGDB API Query Error (HTTP Status {response.status_code})")
-            st.code(response.text)
-        except Exception as e:
-            st.error(f"❌ Transport layer failed data extraction via HTTP/2: {e}")
-    return []
+            return []
+    except Exception as e:
+        st.error(f"❌ Server Connection Failed: {e}")
+        return []
 
 # Retrieve credentials safely from Streamlit Secrets
 try:
-    CLIENT_ID = st.secrets["TWITCH_CLIENT_ID"]
-    CLIENT_SECRET = st.secrets["TWITCH_CLIENT_SECRET"]
+    API_KEY = st.secrets["RAWG_API_KEY"]
 except Exception:
-    CLIENT_ID = None
-    CLIENT_SECRET = None
+    API_KEY = None
 
-if not CLIENT_ID or not CLIENT_SECRET or "your_" in str(CLIENT_ID):
-    st.warning("⚠️ Configuration Required: Update your Streamlit Secrets with valid Twitch credentials.")
+if not API_KEY or "your_" in str(API_KEY):
+    st.warning("⚠️ Configuration Required: Please update your Streamlit Secrets with your valid RAWG_API_KEY token.")
 else:
-    with st.spinner("Processing token transaction via HTTP/2 tunnel..."):
-        token = get_igdb_token(CLIENT_ID, CLIENT_SECRET)
+    with st.spinner("Streaming live trending datasets from RAWG matrix..."):
+        games = fetch_rawg_trending(API_KEY)
         
-        if token:
-            games = fetch_trending_games(CLIENT_ID, token)
-            
-            if games:
-                for idx, game in enumerate(games, 1):
-                    col1, col2 = st.columns()
+        if games:
+            for idx, game in enumerate(games, 1):
+                col1, col2 = st.columns([1, 2])
+                
+                with col1:
+                    # RAWG serves direct high-res image strings natively under background_image
+                    if game.get("background_image"):
+                        st.image(game["background_image"], use_container_width=True)
+                    else:
+                        st.image("https://placeholder.com", use_container_width=True)
+                
+                with col2:
+                    st.subheader(f"{idx}. {game.get('name', 'Unknown Title')}")
                     
-                    with col1:
-                        if "cover" in game and "url" in game["cover"]:
-                            img_url = "https:" + game["cover"]["url"].replace("t_thumb", "t_cover_big")
-                            st.image(img_url, use_container_width=True)
-                        else:
-                            st.image("https://placeholder.com", use_container_width=True)
+                    # Release Date formatting layout
+                    if game.get("released"):
+                        st.caption(f"📅 **Released:** {game['released']}")
                     
-                    with col2:
-                        st.subheader(f"{idx}. {game['name']}")
+                    # Metacritic Score display
+                    if game.get("metacritic"):
+                        st.caption(f"💯 **Metacritic Rating:** {game['metacritic']}/100")
+                    
+                    # Platform Badges extraction loop
+                    if game.get("parent_platforms"):
+                        platforms = [p["platform"]["name"] for p in game["parent_platforms"] if "platform" in p]
+                        st.caption(f"🕹️ **Platforms:** {', '.join(platforms)}")
                         
-                        if "first_release_date" in game:
-                            rel_date = datetime.fromtimestamp(game["first_release_date"]).strftime('%Y-%m-%d')
-                            st.caption(f"📅 **Released:** {rel_date}")
-                        
-                        if "popularity" in game:
-                            st.caption(f"🔥 **Daily PopScore Index:** {game['popularity']:.1f}")
-                        
-                        if "total_rating" in game:
-                            st.caption(f"⭐ **Community Score:** {game['total_rating']:.1f}/100")
-                            
-                        summary = game.get("summary", "No description available.")
-                        st.write(summary)
-                        
-                    st.divider()
-            else:
-                st.info("No records returned. The query format is fine, but the data stream is currently blank.")
+                    # Added/Wishlist momentum tally (surfacing the core trending score metric)
+                    if game.get("added"):
+                        st.caption(f"📈 **Trending Metric Count:** {game['added']:,} player profiles tracked")
+                
+                st.divider()
+        else:
+            st.info("The API connection completed but returned zero active listings.")
