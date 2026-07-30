@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("🎮 Top 10 Popular Recent Games")
-st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 3 days.")
+st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 7 days.")
 
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)  # Cache access token for long periods (~3.4 days)
@@ -30,8 +30,8 @@ def get_igdb_token(client_id, client_secret):
         st.error(f"Failed to authenticate with Twitch: {e}")
         return None
 
-# 2. Helper function to query IGDB for games released in the last 3 days
-@st.cache_data(ttl=3600)  # Reduced cache to 1 hour since 3-day data updates rapidly
+# 2. Helper function to query IGDB for games released in the last 7 days
+@st.cache_data(ttl=14400)  # Cache game data for 4 hours
 def fetch_igdb_top_games(client_id, client_secret):
     token = get_igdb_token(client_id, client_secret)
     if not token:
@@ -44,13 +44,13 @@ def fetch_igdb_top_games(client_id, client_secret):
         "User-Agent": "StreamlitGameRanker/1.0"
     }
 
-    # Calculate Unix timestamp for 3 days ago (3 days * 24 hours * 3600 seconds)
-    three_days_ago = int(time.time()) - (3 * 86400)
+    # Calculate Unix timestamp for 7 days ago (7 days * 24 hours * 3600 seconds)
+    seven_days_ago = int(time.time()) - (7 * 86400)
 
-    # Filter: Games released in the last 3 days, sorted by total rating activity
+    # Filter: Games released in the last 7 days, sorted by total rating activity
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
-        f"where first_release_date > {three_days_ago} & total_rating_count != null; "
+        f"where first_release_date > {seven_days_ago} & total_rating_count != null; "
         f"sort total_rating_count desc; "
         f"limit 10;"
     )
@@ -92,9 +92,9 @@ def fetch_igdb_top_games(client_id, client_secret):
         return pd.DataFrame()
 
 # 3. Main Streamlit Application UI
-st.sidebar.header("🔑 IGDB API Configuration")
-client_id = st.sidebar.text_input("Twitch Client ID", type="password", value=st.secrets.get("TWITCH_CLIENT_ID", ""))
-client_secret = st.sidebar.text_input("Twitch Client Secret", type="password", value=st.secrets.get("TWITCH_CLIENT_SECRET", ""))
+# Fetch keys entirely from Streamlit Secrets (tmol) for Streamlit Community Cloud deployment
+client_id = st.secrets.get("tmol", {}).get("TWITCH_CLIENT_ID", "")
+client_secret = st.secrets.get("tmol", {}).get("TWITCH_CLIENT_SECRET", "")
 
 if client_id and client_secret:
     with st.spinner("Fetching trending games..."):
@@ -102,7 +102,7 @@ if client_id and client_secret:
         
     if not df.empty:
         for index, row in df.iterrows():
-            col1, col2 = st.columns([1, 4])  # Adjusted column ratios for better visual balance
+            col1, col2 = st.columns([1, 4])
             
             with col1:
                 if row["Cover"]:
@@ -117,6 +117,7 @@ if client_id and client_secret:
                 st.write(f"⭐ **Rating:** {row['Rating']} / 100 ({row['Reviews Count']} votes)")
             st.divider()
     else:
-        st.info("No games found with reviews in the last 3 days. Consider increasing the timeframe if this list is empty.")
+        st.info("No games found with reviews in the last 7 days.")
 else:
-    st.warning("Please provide your Twitch/IGDB API credentials in the sidebar to load the leaderboard.")
+    st.error("Missing API Credentials! Please configure your Streamlit Secrets.")
+    st.info("Ensure your Secrets dashboard has a `[tmol]` section with your credentials.")
