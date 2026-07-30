@@ -102,13 +102,13 @@ def fetch_igdb_top_games(client_id, client_secret):
 
 # 3. Main Streamlit Application UI
 tmol_secrets = st.secrets.get("tmol", {})
-client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
-client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
+client_id = tmol_secrets.get("p3p6uzalq7goirss68gg50v5iy30mv", "")
+client_secret = tmol_secrets.get("4dzxgc818qa0faepyrd4k2ffrhixg1", "")
 
 # Fallback setup - replace placeholder strings inside the quotes below
 if not client_id or not client_secret:
-    client_id = "YOUR_REAL_TWITCH_CLIENT_ID"       
-    client_secret = "YOUR_REAL_TWITCH_CLIENT_SECRET" 
+    client_id = "p3p6uzalq7goirss68gg50v5iy30mv"       
+    client_secret = "4dzxgc818qa0faepyrd4k2ffrhixg1" 
 
 # Verify keys aren't default unedited template strings
 if client_id and "YOUR_REAL" not in client_id:
