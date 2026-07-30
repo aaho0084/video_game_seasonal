@@ -14,7 +14,7 @@ st.title("🎮 Top 10 Popular Recent Games")
 st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 7 days.")
 
 # 1. Helper function to authenticate with Twitch OAuth2
-@st.cache_data(ttl=300000)  # Cache access token for long periods (~3.4 days)
+@st.cache_data(ttl=300000)
 def get_igdb_token(client_id, client_secret):
     auth_url = (
         f"https://twitch.tv"
@@ -31,7 +31,7 @@ def get_igdb_token(client_id, client_secret):
         return None
 
 # 2. Helper function to query IGDB for games released in the last 7 days
-@st.cache_data(ttl=14400)  # Cache game data for 4 hours
+@st.cache_data(ttl=14400)
 def fetch_igdb_top_games(client_id, client_secret):
     token = get_igdb_token(client_id, client_secret)
     if not token:
@@ -44,7 +44,7 @@ def fetch_igdb_top_games(client_id, client_secret):
         "User-Agent": "StreamlitGameRanker/1.0"
     }
 
-    # Calculate Unix timestamp for 7 days ago (7 days * 24 hours * 3600 seconds)
+    # Calculate Unix timestamp for 7 days ago
     seven_days_ago = int(time.time()) - (7 * 86400)
 
     # Filter: Games released in the last 7 days, sorted by total rating activity
@@ -60,14 +60,12 @@ def fetch_igdb_top_games(client_id, client_secret):
         response.raise_for_status()
         data = response.json()
         
-        # Parse results into a clean list of dictionaries
         games_list = []
         for game in data:
             cover_url = game.get("cover", {}).get("url", "")
             if cover_url and cover_url.startswith("//"):
                 cover_url = "https:" + cover_url
             
-            # Upgrade image resolution from small thumbnail to t_cover_big
             if "t_thumb" in cover_url:
                 cover_url = cover_url.replace("t_thumb", "t_cover_big")
             
@@ -92,9 +90,10 @@ def fetch_igdb_top_games(client_id, client_secret):
         return pd.DataFrame()
 
 # 3. Main Streamlit Application UI
-# Fetch keys entirely from Streamlit Secrets (tmol) for Streamlit Community Cloud deployment
-client_id = st.secrets.get("tmol", {}).get("TWITCH_CLIENT_ID", "")
-client_secret = st.secrets.get("tmol", {}).get("TWITCH_CLIENT_SECRET", "")
+# Robust dictionary lookup prevents AppCrash if [tmol] is missing
+tmol_secrets = st.secrets.get("tmol", {})
+client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
+client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
 
 if client_id and client_secret:
     with st.spinner("Fetching trending games..."):
@@ -102,7 +101,7 @@ if client_id and client_secret:
         
     if not df.empty:
         for index, row in df.iterrows():
-            col1, col2 = st.columns([1, 4])
+            col1, col2 = st.columns([1, 3])
             
             with col1:
                 if row["Cover"]:
@@ -119,5 +118,22 @@ if client_id and client_secret:
     else:
         st.info("No games found with reviews in the last 7 days.")
 else:
-    st.error("Missing API Credentials! Please configure your Streamlit Secrets.")
-    st.info("Ensure your Secrets dashboard has a `[tmol]` section with your credentials.")
+    st.error("⚠️ Missing API Credentials!")
+    st.markdown("""
+    ### How to fix this error:
+    
+    **Option A: Running Locally (Your PC)**
+    1. Create a folder named `.streamlit` in your project root directory.
+    2. Inside it, create a file named `secrets.toml`.
+    3. Paste the following configuration into it:
+    ```toml
+    [tmol]
+    TWITCH_CLIENT_ID = "your_actual_client_id"
+    TWITCH_CLIENT_SECRET = "your_actual_client_secret"
+    ```
+    
+    **Option B: Running on Streamlit Community Cloud**
+    1. Go to your Streamlit App Dashboard.
+    2. Click on **Settings** -> **Secrets**.
+    3. Paste the exact same `[tmol]` configuration block above into the text box and click **Save**.
+    """)
