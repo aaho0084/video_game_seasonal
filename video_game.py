@@ -6,7 +6,7 @@ from datetime import datetime
 st.set_page_config(page_title="Top 10 Games Today", page_icon="🎮", layout="centered")
 
 st.title("🎮 Top 10 Games of Today")
-st.write(f"Based on live popularity metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
+st.write(f"Based on metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
 
 # Sidebar instructions for deployment setup
 st.sidebar.header("⚙️ Deployment Setup")
@@ -33,9 +33,9 @@ TWITCH_CLIENT_SECRET = "your_client_secret"
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    url = "https://twitch.tv"
+    url = "https://id.twitch.tv/oauth2/token"
     
-    # Passing credentials safely via params prevents URL host-parsing issues
+    # Twitch OAuth demands Form Data (data=) or an explicit raw query string to parse correctly
     payload = {
         "client_id": client_id,
         "client_secret": client_secret,
@@ -43,33 +43,33 @@ def get_igdb_token(client_id, client_secret):
     }
     
     try:
-        response = requests.post(url, params=payload)
+        response = requests.post(url, data=payload)
         if response.status_code == 200:
             return response.json().get("access_token")
         else:
-            st.error(f"Auth Error {response.status_code}: {response.text}")
+            st.error(f"Auth Server Refused Access (Status {response.status_code}): {response.text}")
     except Exception as e:
         st.error(f"Authentication Request Failed: {e}")
     return None
 
 # Function to fetch top popular games
 def fetch_top_games(client_id, access_token):
-    url = "https://igdb.com"
+    url = "https://api.igdb.com/v4/games"
     headers = {
         "Client-ID": client_id,
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "text/plain"
     }
     
-    # Fixed query layout string
-    body = "fields name, popularity, cover.url, summary, first_release_date, total_rating; sort popularity desc; where name != null & category = 0; limit 10;"
+    # Using 'hypes' filter to ensure modern, high-traffic active titles surface reliably
+    body = "fields name, hypes, cover.url, summary, first_release_date, total_rating; sort hypes desc; where name != null & category = 0 & hypes != null; limit 10;"
     
     try:
         response = requests.post(url, headers=headers, data=body)
         if response.status_code == 200:
             return response.json()
         else:
-            st.error(f"IGDB API Error {response.status_code}: {response.text}")
+            st.error(f"IGDB API Query Error {response.status_code}: {response.text}")
             return []
     except Exception as e:
         st.error(f"API Connection Failed: {e}")
@@ -96,7 +96,7 @@ else:
                     col1, col2 = st.columns([1, 3])
                     
                     with col1:
-                        # Handle cover image
+                        # Handle cover image formatting safely
                         if "cover" in game and "url" in game["cover"]:
                             img_url = "https:" + game["cover"]["url"].replace("t_thumb", "t_cover_big")
                             st.image(img_url, use_container_width=True)
@@ -106,16 +106,16 @@ else:
                     with col2:
                         st.subheader(f"{idx}. {game['name']}")
                         
-                        # Format Release Date
+                        # Format Release Date safely
                         if "first_release_date" in game:
                             rel_date = datetime.fromtimestamp(game["first_release_date"]).strftime('%Y-%m-%d')
                             st.caption(f"📅 **Released:** {rel_date}")
                         
-                        # Format Rating
+                        # Format Rating safely
                         if "total_rating" in game:
                             st.caption(f"⭐ **Rating:** {game['total_rating']:.1f}/100")
                             
-                        # Summary description
+                        # Summary description layout
                         summary = game.get("summary", "No description available.")
                         st.write(summary)
                         
