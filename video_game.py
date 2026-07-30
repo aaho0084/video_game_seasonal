@@ -21,22 +21,15 @@ st.sidebar.markdown("""
 3. Push both files to a **GitHub repository**.
 4. Log into [Streamlit Community Cloud](https://streamlit.io).
 5. Click **New app**, select your repo, and deploy!
-
-### 🔑 IGDB API Credentials
-Get credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets:
-```toml
-TWITCH_CLIENT_ID = "your_actual_client_id"
-TWITCH_CLIENT_SECRET = "your_actual_client_secret"
-```
 """)
 
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    url = "https://twitch.tv"
+    url = "https://id.twitch.tv/oauth2/token"
     
-    # Strip quotes only, leaving the string raw for validation
-    cid = str(client_id).strip().replace('"', '').replace("'", "")
+    # Strip any brackets, spaces, quotes, or domain prefixes from bad paste habits
+    cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
     csec = str(client_secret).strip().replace('"', '').replace("'", "")
     
     payload = {
@@ -46,12 +39,15 @@ def get_igdb_token(client_id, client_secret):
     }
     
     try:
-        response = requests.post(url, data=payload)
+        # Standard post execution
+        response = requests.post(url, data=payload, timeout=10)
+        
         if response.status_code == 200:
-            return response.json().get("access_token")
+            data = response.json()
+            return data.get("access_token")
         else:
-            st.error(f"❌ Twitch Auth Server Refused Access (Status {response.status_code})")
-            st.code(response.text)
+            st.error(f"❌ Twitch Auth Error (HTTP {response.status_code})")
+            st.text(f"Server response: {response.text}")
     except Exception as e:
         st.error(f"❌ Server Connection Failed during authentication step: {e}")
     return None
@@ -59,22 +55,24 @@ def get_igdb_token(client_id, client_secret):
 # Function to fetch top popular games using resilient parameters
 def fetch_top_games(client_id, access_token):
     url = "https://igdb.com"
+    
+    cid = str(client_id).strip().replace('"', '').replace("'", "").replace("twitch.", "")
     headers = {
-        "Client-ID": client_id.strip().replace('"', '').replace("'", ""),
+        "Client-ID": cid,
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "text/plain"
     }
     
-    # Explicit query structure for maximum engine stability across datasets
+    # Sorted via rating_count to surface top active titles safely without data drops
     body = "fields name, rating_count, cover.url, summary, first_release_date, total_rating; sort rating_count desc; where name != null & category = 0 & rating_count != null; limit 10;"
     
     try:
-        response = requests.post(url, headers=headers, data=body)
+        response = requests.post(url, headers=headers, data=body, timeout=10)
         if response.status_code == 200:
             return response.json()
         else:
-            st.error(f"❌ IGDB API Query Error {response.status_code}")
-            st.code(response.text)
+            st.error(f"❌ IGDB API Query Error (HTTP {response.status_code})")
+            st.text(f"Server response: {response.text}")
             return []
     except Exception as e:
         st.error(f"❌ API Connection Failed: {e}")
@@ -98,7 +96,7 @@ else:
             
             if games:
                 for idx, game in enumerate(games, 1):
-                    col1, col2 = st.columns([1, 3])
+                    col1, col2 = st.columns([1, 2])
                     
                     with col1:
                         if "cover" in game and "url" in game["cover"]:
@@ -117,7 +115,7 @@ else:
                         if "total_rating" in game:
                             st.caption(f"⭐ **Rating:** {game['total_rating']:.1f}/100")
                         elif "rating_count" in game:
-                            st.caption(f"📈 **Active Players Voted:** {game['rating_count']}")
+                            st.caption(f"📈 **Active Tracked Reviewers:** {game['rating_count']}")
                             
                         summary = game.get("summary", "No description available.")
                         st.write(summary)
