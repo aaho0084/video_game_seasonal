@@ -11,12 +11,12 @@ st.set_page_config(
 )
 
 st.title("🎮 Top 10 Popular Recent Games")
-st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 30 days sorted by popularity.")
+st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 30 days sorted by hype.")
 
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)
 def get_igdb_token(client_id, client_secret):
-    auth_url = "https://twitch.tv"
+    auth_url = "https://id.twitch.tv/oauth2/token"
     payload = {
         "client_id": client_id.strip(),
         "client_secret": client_secret.strip(),
@@ -35,28 +35,29 @@ def get_igdb_token(client_id, client_secret):
         st.error(f"Failed to authenticate with Twitch: {e}")
         return None
 
-# 2. Helper function to query IGDB for games released in the last 30 days sorted by popularity
-@st.cache_data(ttl=14400)  # Cache game data for 4 hours
+# 2. Helper function to query IGDB for games released in the last 30 days sorted by hype
+@st.cache_data(ttl=14400)
 def fetch_igdb_top_games(client_id, client_secret):
     token = get_igdb_token(client_id, client_secret)
     if not token:
         return pd.DataFrame()
 
-    url = "https://igdb.com"
+    url = "https://api.igdb.com/v4/games"
     headers = {
         "Client-ID": client_id.strip(),
         "Authorization": f"Bearer {token}",
         "User-Agent": "StreamlitGameRanker/1.0"
     }
 
-    # Calculate Unix timestamp for 30 days ago (30 days * 24 hours * 3600 seconds)
+    # Calculate Unix timestamp for 30 days ago
     thirty_days_ago = int(time.time()) - (30 * 86400)
 
-    # Filter: Last 30 days, sorted by total review activity/popularity count
+    # FIXED: Replaced total_rating_count sorting with hypes (user anticipation tracking)
+    # This prevents the API from returning 0 results for newly released titles
     query_body = (
-        f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
+        f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date, hypes; "
         f"where first_release_date > {thirty_days_ago}; "
-        f"sort total_rating_count desc; "
+        f"sort hypes desc; "
         f"limit 10;"
     )
 
@@ -84,6 +85,7 @@ def fetch_igdb_top_games(client_id, client_secret):
                 "Title": game.get("name", "Unknown"),
                 "Rating": round(game.get("total_rating", 0), 1) if game.get("total_rating") else "N/A",
                 "Reviews Count": game.get("total_rating_count", 0) if game.get("total_rating_count") else 0,
+                "Hype Score": game.get("hypes", 0) if game.get("hypes") else 0,
                 "Genres": genre_str,
                 "Release Date": release_date,
                 "Cover": cover_url
@@ -117,9 +119,10 @@ if client_id and client_secret:
                 st.subheader(f"{index + 1}. {row['Title']}")
                 st.write(f"📅 **Release Date:** {row['Release Date']}")
                 st.write(f"🏷️ **Genres:** {row['Genres']}")
+                st.write(f"🔥 **Hype Count:** {row['Hype Score']}")
                 st.write(f"⭐ **Rating:** {row['Rating']} / 100 ({row['Reviews Count']} votes)")
             st.divider()
     else:
-        st.info("No games found in the live database for this 30-day window.")
+        st.info("The API connected successfully, but returned 0 games for this window.")
 else:
     st.error("⚠️ Secrets not found! Check your Streamlit dashboard settings.")
