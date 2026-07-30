@@ -16,15 +16,26 @@ st.write("Fetched live via IGDB (Twitch API) showing trending titles released in
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)
 def get_igdb_token(client_id, client_secret):
-    auth_url = (
-        f"https://twitch.tv"
-        f"?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
-    )
+    # Construct exact target endpoint URL
+    auth_url = "https://id.twitch.tv/oauth2/token"
+    
+    # Passing arguments via explicit dictionary data payload ensures standard URL form encoding
+    payload = {
+        "client_id": client_id.strip(),
+        "client_secret": client_secret.strip(),
+        "grant_type": "client_credentials"
+    }
     headers = {"User-Agent": "StreamlitGameRanker/1.0"}
     
     try:
-        response = requests.post(auth_url, headers=headers, timeout=10)
-        response.raise_for_status()
+        response = requests.post(auth_url, data=payload, headers=headers, timeout=10)
+        
+        # Catch explicit status failures before processing JSON
+        if response.status_code != 200:
+            st.error(f"⚠️ Twitch Auth Failed! Status Code: {response.status_code}")
+            st.code(response.text) # Prints text error string directly on your app canvas
+            return None
+            
         return response.json().get("access_token")
     except Exception as e:
         st.error(f"Failed to authenticate with Twitch: {e}")
@@ -39,7 +50,7 @@ def fetch_igdb_top_games(client_id, client_secret):
 
     url = "https://igdb.com"
     headers = {
-        "Client-ID": client_id,
+        "Client-ID": client_id.strip(),
         "Authorization": f"Bearer {token}",
         "User-Agent": "StreamlitGameRanker/1.0"
     }
@@ -47,7 +58,7 @@ def fetch_igdb_top_games(client_id, client_secret):
     # Calculate Unix timestamp for 7 days ago
     seven_days_ago = int(time.time()) - (7 * 86400)
 
-    # Optimized body query for games released over the past 7 days
+    # Filter: Recent titles matching window
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
         f"where first_release_date > {seven_days_ago}; "
@@ -94,19 +105,19 @@ tmol_secrets = st.secrets.get("tmol", {})
 client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
 client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
 
-# If Secrets dashboard is empty, fallback directly to your hardcoded strings below
+# Fallback setup - replace placeholder strings inside the quotes below
 if not client_id or not client_secret:
-    client_id = "p3p6uzalq7goirss68gg50v5iy30mv"       # <-- Paste actual client id here
-    client_secret = "4dzxgc818qa0faepyrd4k2ffrhixg1" # <-- Paste actual client secret here
+    client_id = "YOUR_REAL_TWITCH_CLIENT_ID"       
+    client_secret = "YOUR_REAL_TWITCH_CLIENT_SECRET" 
 
-# Run Application Layer
-if client_id and client_secret:
+# Verify keys aren't default unedited template strings
+if client_id and "YOUR_REAL" not in client_id:
     with st.spinner("Fetching trending games..."):
         df = fetch_igdb_top_games(client_id, client_secret)
         
     if not df.empty:
         for index, row in df.iterrows():
-            col1, col2 = st.columns([1, 4])
+            col1, col2 = st.columns()
             
             with col1:
                 if row["Cover"]:
@@ -123,4 +134,4 @@ if client_id and client_secret:
     else:
         st.info("The API connected successfully, but returned 0 games for this 7-day window.")
 else:
-    st.error("⚠️ Credentials missing! Paste your actual keys directly into lines 92 and 93.")
+    st.error("⚠️ Credentials missing! Replace placeholder strings inside the script file.")
