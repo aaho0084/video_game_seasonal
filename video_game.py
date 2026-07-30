@@ -23,7 +23,7 @@ st.sidebar.markdown("""
 5. Click **New app**, select your repo, and deploy!
 
 ### 🔑 IGDB API Credentials
-Get your credentials from the [Twitch Developer Portal](https://twitch.tv). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
+Get your credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
 ```toml
 TWITCH_CLIENT_ID = "your_client_id"
 TWITCH_CLIENT_SECRET = "your_client_secret"
@@ -33,9 +33,17 @@ TWITCH_CLIENT_SECRET = "your_client_secret"
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    url = f"https://twitch.tv{client_id}&client_secret={client_secret}&grant_type=client_credentials"
+    url = "https://twitch.tv"
+    
+    # Passing credentials safely via params prevents URL host-parsing issues
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "client_credentials"
+    }
+    
     try:
-        response = requests.post(url)
+        response = requests.post(url, params=payload)
         if response.status_code == 200:
             return response.json().get("access_token")
         else:
@@ -53,7 +61,7 @@ def fetch_top_games(client_id, access_token):
         "Content-Type": "text/plain"
     }
     
-    # Inline formatting string to prevent query syntax parsing issues
+    # Fixed query layout string
     body = "fields name, popularity, cover.url, summary, first_release_date, total_rating; sort popularity desc; where name != null & category = 0; limit 10;"
     
     try:
@@ -61,7 +69,6 @@ def fetch_top_games(client_id, access_token):
         if response.status_code == 200:
             return response.json()
         else:
-            # Displays the exact API response error message on screen
             st.error(f"IGDB API Error {response.status_code}: {response.text}")
             return []
     except Exception as e:
@@ -91,7 +98,6 @@ else:
                     with col1:
                         # Handle cover image
                         if "cover" in game and "url" in game["cover"]:
-                            # Convert thumbnail URL to high quality big cover URL
                             img_url = "https:" + game["cover"]["url"].replace("t_thumb", "t_cover_big")
                             st.image(img_url, use_container_width=True)
                         else:
