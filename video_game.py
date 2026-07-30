@@ -6,7 +6,7 @@ from datetime import datetime
 st.set_page_config(page_title="Top 10 Games Today", page_icon="🎮", layout="centered")
 
 st.title("🎮 Top 10 Games of Today")
-st.write(f"Based on metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
+st.write(f"Based on modern trend metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
 
 # Sidebar instructions for deployment setup
 st.sidebar.header("⚙️ Deployment Setup")
@@ -19,11 +19,11 @@ st.sidebar.markdown("""
    requests
    ```
 3. Push both files to a **GitHub repository**.
-4. Log into [Streamlit Community Cloud](https://streamlit.io).
+4. Log into [Streamlit Community Cloud](https://share.streamlit.io/).
 5. Click **New app**, select your repo, and deploy!
 
 ### 🔑 IGDB API Credentials
-Get your credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
+Get your credentials from the [Twitch Developer Portal](https://twitch.tv). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
 ```toml
 TWITCH_CLIENT_ID = "your_client_id"
 TWITCH_CLIENT_SECRET = "your_client_secret"
@@ -33,15 +33,12 @@ TWITCH_CLIENT_SECRET = "your_client_secret"
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    url = "https://id.twitch.tv/oauth2/token"
-    
-    # Twitch OAuth demands Form Data (data=) or an explicit raw query string to parse correctly
+    url = "https://twitch.tv"
     payload = {
         "client_id": client_id,
         "client_secret": client_secret,
         "grant_type": "client_credentials"
     }
-    
     try:
         response = requests.post(url, data=payload)
         if response.status_code == 200:
@@ -52,7 +49,7 @@ def get_igdb_token(client_id, client_secret):
         st.error(f"Authentication Request Failed: {e}")
     return None
 
-# Function to fetch top popular games
+# Function to fetch top popular games using modern IGDB endpoints
 def fetch_top_games(client_id, access_token):
     url = "https://api.igdb.com/v4/games"
     headers = {
@@ -61,8 +58,8 @@ def fetch_top_games(client_id, access_token):
         "Content-Type": "text/plain"
     }
     
-    # Using 'hypes' filter to ensure modern, high-traffic active titles surface reliably
-    body = "fields name, hypes, cover.url, summary, first_release_date, total_rating; sort hypes desc; where name != null & category = 0 & hypes != null; limit 10;"
+    # Query targets main game releases sorted by active user follower metrics to capture current popularity
+    body = "fields name, follows, cover.url, summary, first_release_date, total_rating; sort follows desc; where name != null & category = 0 & follows != null; limit 10;"
     
     try:
         response = requests.post(url, headers=headers, data=body)
@@ -114,9 +111,13 @@ else:
                         # Format Rating safely
                         if "total_rating" in game:
                             st.caption(f"⭐ **Rating:** {game['total_rating']:.1f}/100")
+                        elif "follows" in game:
+                            st.caption(f"📈 **Followers:** {game['follows']}")
                             
                         # Summary description layout
                         summary = game.get("summary", "No description available.")
                         st.write(summary)
                         
                     st.divider()
+            else:
+                st.info("The query executed cleanly but returned zero games. Verify your Twitch developer application permissions.")
