@@ -16,7 +16,6 @@ st.write("Fetched live via IGDB (Twitch API) showing trending titles released in
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)
 def get_igdb_token(client_id, client_secret):
-    # FIXED: Restored official Twitch token URL
     auth_url = "https://twitch.tv"
     payload = {
         "client_id": client_id.strip(),
@@ -43,7 +42,6 @@ def fetch_igdb_top_games(client_id, client_secret):
     if not token:
         return pd.DataFrame()
 
-    # FIXED: Restored authorized developer endpoint path
     url = "https://igdb.com"
     headers = {
         "Client-ID": client_id.strip(),
