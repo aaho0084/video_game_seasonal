@@ -19,11 +19,11 @@ st.sidebar.markdown("""
    requests
    ```
 3. Push both files to a **GitHub repository**.
-4. Log into [Streamlit Community Cloud](https://share.streamlit.io/).
+4. Log into [Streamlit Community Cloud](https://streamlit.io).
 5. Click **New app**, select your repo, and deploy!
 
 ### 🔑 IGDB API Credentials
-Get your credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
+Get your credentials from the [Twitch Developer Portal](https://twitch.tv). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
 ```toml
 TWITCH_CLIENT_ID = "your_client_id"
 TWITCH_CLIENT_SECRET = "your_client_secret"
@@ -33,30 +33,40 @@ TWITCH_CLIENT_SECRET = "your_client_secret"
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    url = f"https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
-    response = requests.post(url)
-    if response.status_code == 200:
-        return response.json().get("access_token")
+    url = f"https://twitch.tv{client_id}&client_secret={client_secret}&grant_type=client_credentials"
+    try:
+        response = requests.post(url)
+        if response.status_code == 200:
+            return response.json().get("access_token")
+        else:
+            st.error(f"Auth Error {response.status_code}: {response.text}")
+    except Exception as e:
+        st.error(f"Authentication Request Failed: {e}")
     return None
 
 # Function to fetch top popular games
 def fetch_top_games(client_id, access_token):
-    url = "https://api.igdb.com/v4/games"
+    url = "https://igdb.com"
     headers = {
         "Client-ID": client_id,
-        "Authorization": f"Bearer {access_token}"
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "text/plain"
     }
-    # Query sorted by popularity descending, filtering out unreleased or un-named entries
-    body = """
-    fields name, popularity, cover.url, summary, first_release_date, total_rating;
-    sort popularity desc;
-    where name != null & category = 0;
-    limit 10;
-    """
-    response = requests.post(url, headers=headers, data=body)
-    if response.status_code == 200:
-        return response.json()
-    return []
+    
+    # Inline formatting string to prevent query syntax parsing issues
+    body = "fields name, popularity, cover.url, summary, first_release_date, total_rating; sort popularity desc; where name != null & category = 0; limit 10;"
+    
+    try:
+        response = requests.post(url, headers=headers, data=body)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            # Displays the exact API response error message on screen
+            st.error(f"IGDB API Error {response.status_code}: {response.text}")
+            return []
+    except Exception as e:
+        st.error(f"API Connection Failed: {e}")
+        return []
 
 # Retrieve credentials from Streamlit Secrets
 try:
@@ -85,7 +95,7 @@ else:
                             img_url = "https:" + game["cover"]["url"].replace("t_thumb", "t_cover_big")
                             st.image(img_url, use_container_width=True)
                         else:
-                            st.image("https://via.placeholder.com/150x200?text=No+Cover", use_container_width=True)
+                            st.image("https://placeholder.com", use_container_width=True)
                     
                     with col2:
                         st.subheader(f"{idx}. {game['name']}")
@@ -104,7 +114,3 @@ else:
                         st.write(summary)
                         
                     st.divider()
-            else:
-                st.error("Failed to retrieve games data from IGDB API.")
-        else:
-            st.error("Failed to authenticate with Twitch API. Check your Client ID and Secret.")
