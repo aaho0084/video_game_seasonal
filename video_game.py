@@ -1,142 +1,110 @@
 import streamlit as st
-import pandas as pd
 import requests
-import time
+from datetime import datetime
 
-# Page Configuration
-st.set_page_config(
-    page_title="Top 10 Recent Games (IGDB)",
-    page_icon="🎮",
-    layout="wide"
-)
+# Set up page config
+st.set_page_config(page_title="Top 10 Games Today", page_icon="🎮", layout="centered")
 
-st.title("🎮 Top 10 Popular Recent Games")
-st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 90 days.")
+st.title("🎮 Top 10 Games of Today")
+st.write(f"Based on live popularity metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
 
-# 1. Helper function to authenticate with Twitch OAuth2 - Cached safely as a string
-@st.cache_data(ttl=3600)
+# Sidebar instructions for deployment setup
+st.sidebar.header("⚙️ Deployment Setup")
+st.sidebar.markdown("""
+### GitHub & Streamlit Cloud Setup:
+1. Save this code as `app.py`.
+2. Create a `requirements.txt` file containing:
+   ```text
+   streamlit
+   requests
+   ```
+3. Push both files to a **GitHub repository**.
+4. Log into [Streamlit Community Cloud](https://share.streamlit.io/).
+5. Click **New app**, select your repo, and deploy!
+
+### 🔑 IGDB API Credentials
+Get your credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
+```toml
+TWITCH_CLIENT_ID = "your_client_id"
+TWITCH_CLIENT_SECRET = "your_client_secret"
+```
+""")
+
+# Function to get Twitch Access Token
+@st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    auth_url = "https://twitch.tv"
-    payload = {
-        "client_id": client_id.strip(),
-        "client_secret": client_secret.strip(),
-        "grant_type": "client_credentials"
-    }
-    headers = {"User-Agent": "StreamlitGameRanker/1.0"}
-    
-    try:
-        response = requests.post(auth_url, data=payload, headers=headers, timeout=10)
-        if response.status_code != 200:
-            st.error(f"⚠️ Twitch Auth Failed! Status Code: {response.status_code}")
-            st.code(response.text)
-            return None
+    url = f"https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
+    response = requests.post(url)
+    if response.status_code == 200:
         return response.json().get("access_token")
-    except Exception as e:
-        st.error(f"Failed to authenticate with Twitch: {e}")
-        return None
+    return None
 
-# 2. Main data fetching function
-def fetch_igdb_top_games(client_id, client_secret):
-    token = get_igdb_token(client_id, client_secret)
-    if not token:
-        return pd.DataFrame()
-
-    url = "https://igdb.com"
+# Function to fetch top popular games
+def fetch_top_games(client_id, access_token):
+    url = "https://api.igdb.com/v4/games"
     headers = {
-        "Client-ID": client_id.strip(),
-        "Authorization": f"Bearer {token}",
-        "User-Agent": "StreamlitGameRanker/1.0"
+        "Client-ID": client_id,
+        "Authorization": f"Bearer {access_token}"
     }
+    # Query sorted by popularity descending, filtering out unreleased or un-named entries
+    body = """
+    fields name, popularity, cover.url, summary, first_release_date, total_rating;
+    sort popularity desc;
+    where name != null & category = 0;
+    limit 10;
+    """
+    response = requests.post(url, headers=headers, data=body)
+    if response.status_code == 200:
+        return response.json()
+    return []
 
-    ninety_days_ago = int(time.time()) - (90 * 86400)
+# Retrieve credentials from Streamlit Secrets
+try:
+    CLIENT_ID = st.secrets["TWITCH_CLIENT_ID"]
+    CLIENT_SECRET = st.secrets["TWITCH_CLIENT_SECRET"]
+except Exception:
+    CLIENT_ID = None
+    CLIENT_SECRET = None
 
-    query_body = (
-        f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date, hypes; "
-        f"where first_release_date > {ninety_days_ago}; "
-        f"sort first_release_date desc; "
-        f"limit 50;"
-    )
-
-    try:
-        response = requests.post(url, headers=headers, data=query_body, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        if not data or not isinstance(data, list):
-            return pd.DataFrame()
-            
-        games_list = []
-        for game in data:
-            if not isinstance(game, dict):
-                continue
-                
-            cover_url = game.get("cover", {}).get("url", "") if game.get("cover") else ""
-            if cover_url and cover_url.startswith("//"):
-                cover_url = "https:" + cover_url
-            
-            if "t_thumb" in cover_url:
-                cover_url = cover_url.replace("t_thumb", "t_cover_big")
-            
-            genres = [g.get("name") for g in game.get("genres", []) if isinstance(g, dict)]
-            genre_str = ", ".join(genres) if genres else "N/A"
-            
-            release_ts = game.get("first_release_date")
-            release_date = time.strftime('%Y-%m-%d', time.gmtime(release_ts)) if release_ts else "N/A"
-            
-            games_list.append({
-                "Title": str(game.get("name", "Unknown")),
-                "Rating": float(game.get("total_rating")) if game.get("total_rating") else None,
-                "Reviews Count": int(game.get("total_rating_count")) if game.get("total_rating_count") else 0,
-                "Hype Score": int(game.get("hypes")) if game.get("hypes") else 0,
-                "Genres": genre_str,
-                "Release Date": release_date,
-                "Cover": str(cover_url)
-            })
-            
-        if not games_list:
-            return pd.DataFrame()
-            
-        df = pd.DataFrame(games_list)
-        df = df.sort_values(by=["Hype Score", "Reviews Count"], ascending=False).head(10).reset_index(drop=True)
-        return df
-        
-    except Exception as e:
-        st.error(f"Failed to fetch games from IGDB: {e}")
-        return pd.DataFrame()
-
-# 3. Main Streamlit Application UI - Reverted to your working nested structure
-tmol_secrets = st.secrets.get("tmol", {})
-client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
-client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
-
-if client_id and client_secret:
-    with st.spinner("Loading recent releases..."):
-        df = fetch_igdb_top_games(client_id, client_secret)
-        
-    if df is not None and not df.empty:
-        for index, row in df.iterrows():
-            col1, col2 = st.columns([1, 4])
-            
-            with col1:
-                if row["Cover"] and "placeholder" not in row["Cover"]:
-                    st.image(row["Cover"], use_container_width=True)
-                else:
-                    st.image("https://placehold.co", use_container_width=True)
-                    
-            with col2:
-                st.subheader(f"{index + 1}. {row['Title']}")
-                st.write(f"📅 **Release Date:** {row['Release Date']}")
-                st.write(f"🏷️ **Genres:** {row['Genres']}")
-                if row["Hype Score"] > 0:
-                    st.write(f"🔥 **Hype Score:** {row['Hype Score']}")
-                
-                rating_val = row["Rating"]
-                if pd.notna(rating_val) and rating_val is not None:
-                    st.write(f"⭐ **Rating:** {round(rating_val, 1)} / 100 ({row['Reviews Count']} votes)")
-                else:
-                    st.write("⭐ **Rating:** N/A (Not enough reviews yet)")
-            st.divider()
-    else:
-        st.info("The API connected successfully, but no matching games were found within this 90-day window.")
+if not CLIENT_ID or not CLIENT_SECRET:
+    st.warning("⚠️ Missing IGDB API Credentials! Please configure `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` in your Streamlit Secrets.")
 else:
-    st.error("⚠️ Secrets not found! Please verify your Streamlit App settings dashboard configuration structure.")
+    with st.spinner("Fetching today's top games..."):
+        token = get_igdb_token(CLIENT_ID, CLIENT_SECRET)
+        if token:
+            games = fetch_top_games(CLIENT_ID, token)
+            
+            if games:
+                for idx, game in enumerate(games, 1):
+                    col1, col2 = st.columns([1, 3])
+                    
+                    with col1:
+                        # Handle cover image
+                        if "cover" in game and "url" in game["cover"]:
+                            # Convert thumbnail URL to high quality big cover URL
+                            img_url = "https:" + game["cover"]["url"].replace("t_thumb", "t_cover_big")
+                            st.image(img_url, use_container_width=True)
+                        else:
+                            st.image("https://via.placeholder.com/150x200?text=No+Cover", use_container_width=True)
+                    
+                    with col2:
+                        st.subheader(f"{idx}. {game['name']}")
+                        
+                        # Format Release Date
+                        if "first_release_date" in game:
+                            rel_date = datetime.fromtimestamp(game["first_release_date"]).strftime('%Y-%m-%d')
+                            st.caption(f"📅 **Released:** {rel_date}")
+                        
+                        # Format Rating
+                        if "total_rating" in game:
+                            st.caption(f"⭐ **Rating:** {game['total_rating']:.1f}/100")
+                            
+                        # Summary description
+                        summary = game.get("summary", "No description available.")
+                        st.write(summary)
+                        
+                    st.divider()
+            else:
+                st.error("Failed to retrieve games data from IGDB API.")
+        else:
+            st.error("Failed to authenticate with Twitch API. Check your Client ID and Secret.")
