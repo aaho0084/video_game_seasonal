@@ -16,6 +16,7 @@ st.write("Fetched live via IGDB (Twitch API) showing trending titles released in
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)
 def get_igdb_token(client_id, client_secret):
+    # CORRECT ENDPOINT: Must be the id.twitch.tv OAuth path
     auth_url = "https://twitch.tv"
     payload = {
         "client_id": client_id.strip(),
@@ -42,7 +43,8 @@ def fetch_igdb_top_games(client_id, client_secret):
     if not token:
         return pd.DataFrame()
 
-    url = "https://igdb.com"
+    # CORRECT ENDPOINT: Must be ://igdb.com
+    url = "https://://igdb.comgames"
     headers = {
         "Client-ID": client_id.strip(),
         "Authorization": f"Bearer {token}",
@@ -95,10 +97,12 @@ def fetch_igdb_top_games(client_id, client_secret):
         return pd.DataFrame()
 
 # 3. Main Streamlit Application UI
-# Pulling cleanly from Streamlit App Settings Secrets Dashboard
-tmol_secrets = st.secrets.get("tmol", {})
-client_id = tmol_secrets.get("TWITCH_CLIENT_ID", "")
-client_secret = tmol_secrets.get("TWITCH_CLIENT_SECRET", "")
+st.sidebar.header("🔑 IGDB API Configuration")
+st.sidebar.write("Paste your credentials below to run the app instantly.")
+
+# User inputs credentials directly on the cloud interface
+client_id = st.sidebar.text_input("Twitch Client ID", type="password")
+client_secret = st.sidebar.text_input("Twitch Client Secret", type="password")
 
 if client_id and client_secret:
     with st.spinner("Fetching trending games..."):
@@ -106,7 +110,7 @@ if client_id and client_secret:
         
     if not df.empty:
         for index, row in df.iterrows():
-            col1, col2 = st.columns()
+            col1, col2 = st.columns([1, 3])
             
             with col1:
                 if row["Cover"]:
@@ -123,4 +127,4 @@ if client_id and client_secret:
     else:
         st.info("The API connected successfully, but returned 0 games for this 7-day window.")
 else:
-    st.error("⚠️ Secrets not found! Double-check your Streamlit Dashboard App Settings -> Secrets area.")
+    st.warning("👈 Please enter your Twitch Client ID and Client Secret in the sidebar to fetch games.")
