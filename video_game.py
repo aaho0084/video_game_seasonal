@@ -6,7 +6,7 @@ from datetime import datetime
 st.set_page_config(page_title="Top 10 Games Today", page_icon="🎮", layout="centered")
 
 st.title("🎮 Top 10 Games of Today")
-st.write(f"Based on modern trend metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
+st.write(f"Based on global player engagement metrics from **IGDB** | {datetime.now().strftime('%B %d, %Y')}")
 
 # Sidebar instructions for deployment setup
 st.sidebar.header("⚙️ Deployment Setup")
@@ -19,11 +19,11 @@ st.sidebar.markdown("""
    requests
    ```
 3. Push both files to a **GitHub repository**.
-4. Log into [Streamlit Community Cloud](https://streamlit.io).
+4. Log into [Streamlit Community Cloud](https://share.streamlit.io/).
 5. Click **New app**, select your repo, and deploy!
 
 ### 🔑 IGDB API Credentials
-Get your credentials from the [Twitch Developer Portal](https://dev.twitch.tv/). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
+Get your credentials from the [Twitch Developer Portal](https://twitch.tv). Add them to your Streamlit App Secrets (`.streamlit/secrets.toml` locally or in the Cloud settings):
 ```toml
 TWITCH_CLIENT_ID = "your_client_id"
 TWITCH_CLIENT_SECRET = "your_client_secret"
@@ -35,7 +35,6 @@ def sanitize_secret(secret_value):
     if not secret_value:
         return ""
     val = str(secret_value).strip().replace('"', '').replace("'", "")
-    # Automatically purge copy-paste domain remnants that break the Python parser
     if val.startswith("twitch."):
         val = val.replace("twitch.", "", 1)
     return val
@@ -43,17 +42,13 @@ def sanitize_secret(secret_value):
 # Function to get Twitch Access Token
 @st.cache_data(ttl=3600)  # Cache token for 1 hour
 def get_igdb_token(client_id, client_secret):
-    url = "https://id.twitch.tv/oauth2/token"
-    
-    # Twitch API requires URL encoded parameters passed in the payload body
+    url = "https://twitch.tv"
     payload = {
         "client_id": client_id,
         "client_secret": client_secret,
         "grant_type": "client_credentials"
     }
-    
     try:
-        # data= forces application/x-www-form-urlencoded to prevent URL host errors
         response = requests.post(url, data=payload)
         if response.status_code == 200:
             return response.json().get("access_token")
@@ -63,7 +58,7 @@ def get_igdb_token(client_id, client_secret):
         st.error(f"❌ Server Connection Failed during authentication step: {e}")
     return None
 
-# Function to fetch top popular games using modern IGDB endpoints
+# Function to fetch top popular games using resilient parameters
 def fetch_top_games(client_id, access_token):
     url = "https://api.igdb.com/v4/games"
     headers = {
@@ -72,8 +67,8 @@ def fetch_top_games(client_id, access_token):
         "Content-Type": "text/plain"
     }
     
-    # Query targets main game releases sorted by active user follower metrics to capture current popularity
-    body = "fields name, follows, cover.url, summary, first_release_date, total_rating; sort follows desc; where name != null & category = 0 & follows != null; limit 10;"
+    # Sorting by rating_count targets highly active, talked-about games securely without empty array dropouts
+    body = "fields name, rating_count, cover.url, summary, first_release_date, total_rating; sort rating_count desc; where name != null & category = 0 & rating_count != null; limit 10;"
     
     try:
         response = requests.post(url, headers=headers, data=body)
@@ -129,8 +124,8 @@ else:
                         # Format Rating safely
                         if "total_rating" in game:
                             st.caption(f"⭐ **Rating:** {game['total_rating']:.1f}/100")
-                        elif "follows" in game:
-                            st.caption(f"📈 **Follower Trend Metric:** {game['follows']}")
+                        elif "rating_count" in game:
+                            st.caption(f"📈 **Active Players Voted:** {game['rating_count']}")
                             
                         # Summary description layout
                         summary = game.get("summary", "No description available.")
