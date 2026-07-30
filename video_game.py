@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-import time  # <--- Fixes the NameError!
+import time
 
 # Page Configuration
 st.set_page_config(
@@ -11,13 +11,13 @@ st.set_page_config(
 )
 
 st.title("🎮 Top 10 Popular Recent Games")
-st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 90 days.")
+st.write("Fetched live via IGDB (Twitch API) showing trending titles released in the last 3 days.")
 
 # 1. Helper function to authenticate with Twitch OAuth2
 @st.cache_data(ttl=300000)  # Cache access token for long periods (~3.4 days)
 def get_igdb_token(client_id, client_secret):
     auth_url = (
-        f"https://id.twitch.tv/oauth2/token"
+        f"https://twitch.tv"
         f"?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
     )
     headers = {"User-Agent": "StreamlitGameRanker/1.0"}
@@ -30,27 +30,27 @@ def get_igdb_token(client_id, client_secret):
         st.error(f"Failed to authenticate with Twitch: {e}")
         return None
 
-# 2. Helper function to query IGDB for games released in the last 90 days
-@st.cache_data(ttl=86400)  # Cache game data for 24 hours to preserve API limits
+# 2. Helper function to query IGDB for games released in the last 3 days
+@st.cache_data(ttl=3600)  # Reduced cache to 1 hour since 3-day data updates rapidly
 def fetch_igdb_top_games(client_id, client_secret):
     token = get_igdb_token(client_id, client_secret)
     if not token:
         return pd.DataFrame()
 
-    url = "https://api.igdb.com/v4/games"
+    url = "https://igdb.com"
     headers = {
         "Client-ID": client_id,
         "Authorization": f"Bearer {token}",
         "User-Agent": "StreamlitGameRanker/1.0"
     }
 
-    # Calculate Unix timestamp for 90 days ago
-    ninety_days_ago = int(time.time()) - (90 * 86400)
+    # Calculate Unix timestamp for 3 days ago (3 days * 24 hours * 3600 seconds)
+    three_days_ago = int(time.time()) - (3 * 86400)
 
-    # Filter: Games released in the last 90 days, sorted by total rating activity
+    # Filter: Games released in the last 3 days, sorted by total rating activity
     query_body = (
         f"fields name, total_rating, total_rating_count, cover.url, genres.name, first_release_date; "
-        f"where first_release_date > {ninety_days_ago} & total_rating_count != null; "
+        f"where first_release_date > {three_days_ago} & total_rating_count != null; "
         f"sort total_rating_count desc; "
         f"limit 10;"
     )
@@ -59,62 +59,64 @@ def fetch_igdb_top_games(client_id, client_secret):
         response = requests.post(url, headers=headers, data=query_body, timeout=10)
         response.raise_for_status()
         data = response.json()
-
-        if not data:
-            st.warning("No recent games found for this timeframe.")
-            return pd.DataFrame()
-
-        parsed_games = []
+        
+        # Parse results into a clean list of dictionaries
+        games_list = []
         for game in data:
-            cover_raw = game.get("cover", {}).get("url", "")
-            cover_url = f"https:{cover_raw}".replace("t_thumb", "t_cover_big") if cover_raw else None
-            genres_list = [g['name'] for g in game.get('genres', [])] if 'genres' in game else []
+            cover_url = game.get("cover", {}).get("url", "")
+            if cover_url and cover_url.startswith("//"):
+                cover_url = "https:" + cover_url
             
-            # Format Unix timestamp to human-readable date string
+            # Upgrade image resolution from small thumbnail to t_cover_big
+            if "t_thumb" in cover_url:
+                cover_url = cover_url.replace("t_thumb", "t_cover_big")
+            
+            genres = [g.get("name") for g in game.get("genres", [])]
+            genre_str = ", ".join(genres) if genres else "N/A"
+            
             release_ts = game.get("first_release_date")
-            release_date = pd.to_datetime(release_ts, unit='s').strftime('%Y-%m-%d') if release_ts else "N/A"
-
-            parsed_games.append({
-                "Game Title": game.get("name", "Unknown"),
+            release_date = time.strftime('%Y-%m-%d', time.gmtime(release_ts)) if release_ts else "N/A"
+            
+            games_list.append({
+                "Title": game.get("name", "Unknown"),
+                "Rating": round(game.get("total_rating", 0), 1) if game.get("total_rating") else "N/A",
+                "Reviews Count": game.get("total_rating_count", 0),
+                "Genres": genre_str,
                 "Release Date": release_date,
-                "Score": round(game.get("total_rating", 0), 1),
-                "Total Votes": game.get("total_rating_count", 0),
-                "Genres": ", ".join(genres_list),
                 "Cover": cover_url
             })
-
-        df = pd.DataFrame(parsed_games)
-        df.index += 1  # 1-indexed ranking
-        return df
-
+            
+        return pd.DataFrame(games_list)
     except Exception as e:
-        st.error(f"Error fetching data from IGDB: {e}")
+        st.error(f"Failed to fetch games from IGDB: {e}")
         return pd.DataFrame()
 
+# 3. Main Streamlit Application UI
+st.sidebar.header("🔑 IGDB API Configuration")
+client_id = st.sidebar.text_input("Twitch Client ID", type="password", value=st.secrets.get("TWITCH_CLIENT_ID", ""))
+client_secret = st.sidebar.text_input("Twitch Client Secret", type="password", value=st.secrets.get("TWITCH_CLIENT_SECRET", ""))
 
-# 3. Main Application Logic & Secret Handling
-if "IGDB_CLIENT_ID" in st.secrets and "IGDB_CLIENT_SECRET" in st.secrets:
-    client_id = st.secrets["IGDB_CLIENT_ID"]
-    client_secret = st.secrets["IGDB_CLIENT_SECRET"]
-
-    with st.spinner("Retrieving latest rankings from IGDB..."):
+if client_id and client_secret:
+    with st.spinner("Fetching trending games..."):
         df = fetch_igdb_top_games(client_id, client_secret)
-
-    if not df.empty:
-        st.subheader("🏆 IGDB Leaderboard (Recent Releases)")
         
-        # Display data with image and formatted number columns
-        st.dataframe(
-            df,
-            column_config={
-                "Cover": st.column_config.ImageColumn("Cover Art", help="Game Cover"),
-                "Score": st.column_config.NumberColumn("User Rating", format="%.1f ⭐")
-            },
-            use_container_width=True
-        )
-
-        st.subheader("📊 Popularity Breakdown (Total Votes)")
-        st.bar_chart(df.set_index('Game Title')['Total Votes'])
-
+    if not df.empty:
+        for index, row in df.iterrows():
+            col1, col2 = st.columns([1, 4])  # Adjusted column ratios for better visual balance
+            
+            with col1:
+                if row["Cover"]:
+                    st.image(row["Cover"], use_container_width=True)
+                else:
+                    st.image("https://placeholder.com", use_container_width=True)
+                    
+            with col2:
+                st.subheader(f"{index + 1}. {row['Title']}")
+                st.write(f"📅 **Release Date:** {row['Release Date']}")
+                st.write(f"🏷️ **Genres:** {row['Genres']}")
+                st.write(f"⭐ **Rating:** {row['Rating']} / 100 ({row['Reviews Count']} votes)")
+            st.divider()
+    else:
+        st.info("No games found with reviews in the last 3 days. Consider increasing the timeframe if this list is empty.")
 else:
-    st.warning("⚠️ IGDB Credentials missing! Add `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` in your Streamlit Cloud Secrets Manager.")
+    st.warning("Please provide your Twitch/IGDB API credentials in the sidebar to load the leaderboard.")
